@@ -37,66 +37,68 @@
 #include "lio_ekf.hpp"
 #include "lio_types.hpp"
 
-namespace lio_ekf {
+namespace lio_ekf
+{
 
-class OdometryServer {
-public:
-  /// OdometryServer constructor
-  OdometryServer(const ros::NodeHandle &nh, const ros::NodeHandle &pnh);
+  class OdometryServer
+  {
+  public:
+    /// OdometryServer constructor
+    OdometryServer(const ros::NodeHandle &nh, const ros::NodeHandle &pnh);
 
-  // buffer imu data
-  void imu_cbk(const sensor_msgs::Imu::ConstPtr &msg_in);
-  void lidar_cbk(const sensor_msgs::PointCloud2ConstPtr &msg);
+    // buffer imu data
+    void imu_cbk(const sensor_msgs::Imu::ConstPtr &msg_in);
+    void lidar_cbk(const sensor_msgs::PointCloud2ConstPtr &msg);
 
-  void writeResults(std::ofstream &odo);
+    void writeResults(std::ofstream &odo);
 
-  void publishMsgs();
+    void publishMsgs();
 
-  std::deque<std_msgs::Header> lidar_header_buffer_;
+    std::deque<std_msgs::Header> lidar_header_buffer_;
 
-private:
-  lio_ekf::LIOPara lio_para_; // parameters for lidar-inertial fusion
-  lio_ekf::LIOEKF lio_ekf_;   // lidar-inertial processor
+  private:
+    lio_ekf::LIOPara lio_para_; // parameters for lidar-inertial fusion
+    lio_ekf::LIOEKF lio_ekf_;   // lidar-inertial processor
 
-  bool data_synced_ = false;
+    bool data_synced_ = false;
 
-  // output dir
-  std::string outputdir;
-  std::ofstream odomRes_, odomRes_tum_;
+    // output dir
+    std::string outputdir;
+    std::ofstream odomRes_, odomRes_tum_;
 
-  /// Ros node stuff
-  ros::NodeHandle nh_;
-  ros::NodeHandle pnh_;
-  int queue_size_{1};
-  std::string lid_topic, imu_topic;
+    /// Ros node stuff
+    ros::NodeHandle nh_;
+    ros::NodeHandle pnh_;
+    int queue_size_{1};
+    std::string lid_topic, imu_topic;
 
-  std::mutex mtx_buffer_;
+    std::mutex mtx_buffer_;
 
-  double last_timestamp_imu_, last_timestamp_lidar_;
+    double last_timestamp_imu_, last_timestamp_lidar_;
 
-  std::deque<std::vector<Eigen::Vector3d>> lidar_buffer_;
-  std::deque<lio_ekf::IMU> imu_buffer_;
-  std::deque<double> lidar_time_buffer_;
-  std::deque<std::vector<double>> points_per_scan_time_buffer_;
+    std::deque<std::vector<Eigen::Vector3d>> lidar_buffer_;
+    std::deque<lio_ekf::IMU> imu_buffer_;
+    std::deque<double> lidar_time_buffer_;
+    std::deque<std::vector<double>> points_per_scan_time_buffer_;
 
-  /// Tools for broadcasting TFs.
-  tf2_ros::TransformBroadcaster tf_broadcaster_;
+    /// Tools for broadcasting TFs.
+    tf2_ros::TransformBroadcaster tf_broadcaster_;
 
-  /// Data subscribers.
-  ros::Subscriber pointcloud_sub_;
-  ros::Subscriber imu_sub_;
+    /// Data subscribers.
+    ros::Subscriber pointcloud_sub_;
+    ros::Subscriber imu_sub_;
 
-  /// Data publishers.
-  ros::Publisher odom_publisher_;
-  ros::Publisher traj_publisher_;
-  nav_msgs::Path path_msg_;
-  ros::Publisher frame_publisher_;
-  ros::Publisher kpoints_publisher_;
-  ros::Publisher map_publisher_;
+    /// Data publishers.
+    ros::Publisher odom_publisher_;
+    ros::Publisher traj_publisher_;
+    nav_msgs::Path path_msg_;
+    ros::Publisher frame_publisher_;
+    ros::Publisher kpoints_publisher_;
+    ros::Publisher map_publisher_;
 
-  /// Global/map coordinate frame.
-  std::string odom_frame_{"odom"};
-  std::string pointcloud_frame_{"pointcloud_frame"};
-};
+    /// Global/map coordinate frame.
+    std::string odom_frame_{"odom_lio"};
+    std::string pointcloud_frame_{"pointcloud_frame_lio"};
+  };
 
 } // namespace lio_ekf

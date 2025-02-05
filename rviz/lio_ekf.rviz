@@ -124,19 +124,19 @@ Visualization Manager:
     - Alpha: 1
       Class: rviz/Axes
       Enabled: true
-      Length: 2
+      Length: 0.2
       Name: odometry_frame
-      Radius: 0.5
-      Reference Frame: odom
+      Radius: 0.1
+      Reference Frame: odom_lio
       Show Trail: false
       Value: true
     - Alpha: 1
       Class: rviz/Axes
       Enabled: true
-      Length: 2
+      Length: 0.2
       Name: pointcloud_frame
-      Radius: 0.5
-      Reference Frame: pointcloud_frame
+      Radius: 0.1
+      Reference Frame: pointcloud_frame_lio
       Show Trail: false
       Value: true
     - Alpha: 1
@@ -148,7 +148,7 @@ Visualization Manager:
       Head Length: 0.20000000298023224
       Length: 1
       Line Style: Billboards
-      Line Width: 0.4000000059604645
+      Line Width: 0.04000000059604645
       Name: trajectory
       Offset:
         X: 0
@@ -157,9 +157,9 @@ Visualization Manager:
       Pose Color: 134; 44; 134
       Pose Style: None
       Queue Size: 10
-      Radius: 0.20000000298023224
-      Shaft Diameter: 0.10000000149011612
-      Shaft Length: 0.10000000149011612
+      Radius: 0.020000000298023224
+      Shaft Diameter: 0.010000000149011612
+      Shaft Length: 0.010000000149011612
       Topic: /trajectory
       Unreliable: false
       Value: true
@@ -167,7 +167,7 @@ Visualization Manager:
   Global Options:
     Background Color: 255; 255; 255
     Default Light: true
-    Fixed Frame: odom
+    Fixed Frame: odom_lio
     Frame Rate: 30
   Name: root
   Tools:
@@ -191,7 +191,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 272.0950012207031
+      Distance: 30.0950012207031
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -199,9 +199,9 @@ Visualization Manager:
         Value: false
       Field of View: 0.7853981852531433
       Focal Point:
-        X: -129.78939819335938
-        Y: 123.60833740234375
-        Z: -42.68474197387695
+        X: 0
+        Y: 0
+        Z: 0
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false

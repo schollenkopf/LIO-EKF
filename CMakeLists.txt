@@ -38,7 +38,21 @@ find_package(
              tf2_ros)
 catkin_package()
 
-include(kiss-icp.cmake)
+include(FetchContent)
+FetchContent_Declare(
+  kiss-icp
+  GIT_REPOSITORY https://github.com/PRBonn/kiss-icp.git
+  GIT_TAG v0.2.10
+  SOURCE_SUBDIR cpp/kiss_icp
+)
+
+FetchContent_MakeAvailable(kiss-icp)
+
+if(NOT TARGET kiss_icp::core)
+  add_subdirectory(${kiss-icp_SOURCE_DIR}/cpp/kiss_icp ${kiss-icp_BINARY_DIR})
+endif()
+
+
 # ROS1 node
 add_executable(lio_ekf_node ${CMAKE_CURRENT_SOURCE_DIR}/src/lio_ekf.cpp 
                             ${CMAKE_CURRENT_SOURCE_DIR}/src/lio_ekf_node.cpp

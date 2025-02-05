@@ -1,0 +1,1 @@
+docker run -d --rm  --net=ros --name roscore osrf/ros:noetic-desktop-full roscore

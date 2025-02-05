@@ -1,0 +1,21 @@
+FROM osrf/ros:noetic-desktop-full
+
+SHELL ["/bin/bash", "-c"]
+
+#install dependency
+
+#needed for ouster lib
+RUN apt update && apt install libspdlog-dev -y && apt install gdb -y
+
+
+
+COPY ../data/a107ac6c-305a-4208-a5a4-b4ef41c68c60/ros-bag/ /ros_bag/
+
+# Create Colcon workspace
+RUN mkdir -p /catkin_ws/src
+
+RUN apt install git -y && git clone https://gitlab.com/libeigen/eigen.git && cmake eigen && make install
+
+
+
+#docker build . --file LIO-EKF/docker/Dockerfile_base  -t thesis_noetic_base

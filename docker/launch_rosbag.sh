@@ -1,0 +1,1 @@
+docker run  -d --rm --name=rosbagplay  --net=ros --env="DISPLAY=novnc:0.0" --env="ROS_MASTER_URI=http://roscore:11311" thesis_noetic_base bash -c "sleep 15 && rosbag play ../ros_bag/flight.bag --clock"
