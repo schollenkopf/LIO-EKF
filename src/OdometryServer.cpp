@@ -40,6 +40,7 @@
 #include <geometry_msgs/TransformStamped.h>
 #include <nav_msgs/Odometry.h>
 #include <sensor_msgs/PointCloud2.h>
+#include <sensor_msgs/Range.h>
 #include <tf/transform_broadcaster.h>
 #include <tf2_ros/static_transform_broadcaster.h>
 
@@ -72,6 +73,7 @@ namespace lio_ekf
     // common
     nh_.param<std::string>("common/lidar_topic", lid_topic, "");
     nh_.param<std::string>("common/imu_topic", imu_topic, "");
+    nh_.param<std::string>("common/laser_up_topic", laser_up_topic, "");
 
     nh_.getParam("outputdir", outputdir);
 
@@ -185,6 +187,7 @@ namespace lio_ekf
         lid_topic, 1000, &OdometryServer::lidar_cbk, this);
     imu_sub_ = nh_.subscribe<sensor_msgs::Imu>(imu_topic, 10000,
                                                &OdometryServer::imu_cbk, this);
+    laser_up_sub_ = nh_.subscribe<sensor_msgs::Range>(laser_up_topic, 1000, &OdometryServer::laser_up_cbk, this);
 
     // Intialize publishers
     odom_publisher_ = nh_.advertise<nav_msgs::Odometry>("odometry", queue_size_);
@@ -211,9 +214,12 @@ namespace lio_ekf
       ros::spinOnce();
       if (!data_synced_)
       {
-        if (!imu_buffer_.empty() && !lidar_buffer_.empty())
+        if (!imu_buffer_.empty() && !lidar_buffer_.empty() && !laser_up_buffer_.empty())
         {
-          ROS_WARN("received");
+          if (!laser_up_buffer_.empty())
+          {
+            lio_ekf_.addLaserUpData(laser_up_buffer_, laser_up_time_buffer_);
+          }
           if (!imu_buffer_.empty())
           {
 
@@ -239,6 +245,10 @@ namespace lio_ekf
       }
       else
       {
+        if (laser_up_buffer_.empty())
+        {
+          lio_ekf_.addLaserUpData(laser_up_buffer_, laser_up_time_buffer_);
+        }
 
         if (lidar_buffer_.empty())
           if (imu_buffer_.empty())
@@ -246,7 +256,7 @@ namespace lio_ekf
             continue;
           }
 
-        if (lio_ekf_.getLiDARtimestamp() < lio_ekf_.getImutimestamp() &&
+        if (lio_ekf_.getLiDARtimestamp() < lio_ekf_.getImutimestamp() && // if last lidar is older than last imu
             !lidar_buffer_.empty())
         {
 
@@ -343,6 +353,19 @@ namespace lio_ekf
       points_per_scan_time_buffer_.push_back(timestamps);
     last_timestamp_lidar_ = msg->header.stamp.toSec();
 
+    mtx_buffer_.unlock();
+    sig_buffer_.notify_all();
+  }
+
+  void OdometryServer::laser_up_cbk(const sensor_msgs::RangeConstPtr &msg)
+  {
+    double timestamp = msg->header.stamp.toSec();
+
+    mtx_buffer_.lock();
+
+    laser_up_buffer_.push_back(msg->range);
+    last_timestamp_laser_up_ = timestamp;
+    laser_up_time_buffer_.push_back(timestamp);
     mtx_buffer_.unlock();
     sig_buffer_.notify_all();
   }

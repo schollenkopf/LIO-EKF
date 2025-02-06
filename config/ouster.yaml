@@ -1,6 +1,7 @@
 common:
     lidar_topic:  "/ouster/points"
-    imu_topic:  "/imu/data" 
+    imu_topic:  "/ouster/imu"
+    laser_up_topic: "/mavros/distance_sensor/up"
 
 lidar:
     deskew: false

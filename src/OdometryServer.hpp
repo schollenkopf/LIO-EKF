@@ -29,6 +29,7 @@
 #include <mutex>
 #include <nav_msgs/Path.h>
 #include <ros/ros.h>
+#include <sensor_msgs/Range.h>
 #include <sensor_msgs/Imu.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <tf2_ros/transform_broadcaster.h>
@@ -49,6 +50,7 @@ namespace lio_ekf
     // buffer imu data
     void imu_cbk(const sensor_msgs::Imu::ConstPtr &msg_in);
     void lidar_cbk(const sensor_msgs::PointCloud2ConstPtr &msg);
+    void laser_up_cbk(const sensor_msgs::RangeConstPtr &msg);
 
     void writeResults(std::ofstream &odo);
 
@@ -70,21 +72,24 @@ namespace lio_ekf
     ros::NodeHandle nh_;
     ros::NodeHandle pnh_;
     int queue_size_{1};
-    std::string lid_topic, imu_topic;
+    std::string lid_topic, imu_topic, laser_up_topic;
 
     std::mutex mtx_buffer_;
 
-    double last_timestamp_imu_, last_timestamp_lidar_;
+    double last_timestamp_imu_, last_timestamp_lidar_, last_timestamp_laser_up_;
 
     std::deque<std::vector<Eigen::Vector3d>> lidar_buffer_;
+    std::deque<double> laser_up_buffer_;
     std::deque<lio_ekf::IMU> imu_buffer_;
     std::deque<double> lidar_time_buffer_;
+    std::deque<double> laser_up_time_buffer_;
     std::deque<std::vector<double>> points_per_scan_time_buffer_;
 
     /// Tools for broadcasting TFs.
     tf2_ros::TransformBroadcaster tf_broadcaster_;
 
     /// Data subscribers.
+    ros::Subscriber laser_up_sub_;
     ros::Subscriber pointcloud_sub_;
     ros::Subscriber imu_sub_;
 
