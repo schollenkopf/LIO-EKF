@@ -127,7 +127,16 @@ namespace lio_ekf
            3 * sizeof(double));
     memcpy(lidar_imu_extrin_T.data(), &extrinsic_T[0], 3 * sizeof(double));
     memcpy(lidar_imu_extrin_R.data(), &extrinsic_R[0], 9 * sizeof(double));
-    memcpy(lio_para_.imu_tran_R.data(), &imu_tran_R[0], 9 * sizeof(double));
+    // memcpy(lio_para_.imu_tran_R.data(), &imu_tran_R[0], 9 * sizeof(double));
+    lio_para_.imu_tran_R = Eigen::Map<Eigen::Matrix<double, 3, 3, Eigen::RowMajor>>(imu_tran_R.data());
+
+    ROS_WARN_STREAM("imu frame rotation matrix og:\n"
+                    << lio_para_.imu_tran_R);
+    lio_para_.imu_tran_R = enforceOrthogonality(lio_para_.imu_tran_R);
+    ROS_WARN_STREAM("imu frame rotation matrix orthogonal:\n"
+                    << lio_para_.imu_tran_R);
+
+    // ROS_WARN("External rot %d", lidar_imu_extrin_R);
 
     // the extrinsic lidar-inertial parameters before transforming the imu frame
     lio_para_.Trans_lidar_imu_origin.block<3, 3>(0, 0) = lidar_imu_extrin_R;
@@ -245,7 +254,7 @@ namespace lio_ekf
       }
       else
       {
-        if (laser_up_buffer_.empty())
+        if (!laser_up_buffer_.empty())
         {
           lio_ekf_.addLaserUpData(laser_up_buffer_, laser_up_time_buffer_);
         }
@@ -295,11 +304,17 @@ namespace lio_ekf
     imu_meas.timestamp = timestamp;
 
     imu_meas.dt = timestamp - last_timestamp_imu_;
-    imu_meas.angular_velocity << msg->angular_velocity.x, msg->angular_velocity.y,
-        msg->angular_velocity.z;
+    imu_meas.angular_velocity << 0, 0,
+        0;
 
-    imu_meas.linear_acceleration << msg->linear_acceleration.x,
-        msg->linear_acceleration.y, msg->linear_acceleration.z;
+    // imu_meas.angular_velocity << msg->angular_velocity.x, msg->angular_velocity.y,
+    //     msg->angular_velocity.z;
+
+    // imu_meas.linear_acceleration << msg->linear_acceleration.x,
+    //     msg->linear_acceleration.y, msg->linear_acceleration.z;
+
+    imu_meas.linear_acceleration << 0,
+        0, 0;
 
     imu_meas.angular_velocity = lio_para_.imu_tran_R * imu_meas.angular_velocity;
     imu_meas.linear_acceleration =
@@ -368,6 +383,12 @@ namespace lio_ekf
     laser_up_time_buffer_.push_back(timestamp);
     mtx_buffer_.unlock();
     sig_buffer_.notify_all();
+  }
+
+  Eigen::Matrix3d OdometryServer::enforceOrthogonality(Eigen::Matrix3d &R)
+  {
+    Eigen::JacobiSVD<Eigen::Matrix3d> svd(R, Eigen::ComputeFullU | Eigen::ComputeFullV);
+    return svd.matrixU() * svd.matrixV().transpose();
   }
 
   void OdometryServer::writeResults(std::ofstream &odo)

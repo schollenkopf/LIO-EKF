@@ -327,32 +327,37 @@ namespace lio_ekf
     return std::make_tuple(source_in_imu_frame, frame_downsample);
   }
 
-  void LIOEKF::lidarUpdate()
+  void LIOEKF::laserUpUpdate()
   {
     // --- Ceiling Measurement Update Step ---
-    double initial_depth = 4.0;
-    double z_measured = laser_up_;
+    double distance_to_top = laser_up_;
     double z_robot = bodystate_cur_.pose.translation().z();
-    double measurement_noise = 0.1; // Assume some noise for measurement
+    double measurement_certainty = pow(10, -two_sec_std_);
 
     // Compute residual
-    double residual = z_measured - (initial_depth - z_robot);
+    double residual = (initial_depth_ + z_robot) - distance_to_top;
 
     // Jacobian H_z (only affects z-position)
     Eigen::Matrix<double, 1, 15> H_z = Eigen::Matrix<double, 1, 15>::Zero();
     H_z(0, 2) = 1.0; // Only updates z-position
 
     // Compute Kalman Gain
-    double S = H_z * Cov_ * H_z.transpose() + measurement_noise;
-    Eigen::Matrix<double, 15, 1> K_z = Cov_ * H_z.transpose() * 1 / S;
+    Eigen::Matrix<double, 15, 1> K_z = Cov_ * H_z.transpose() * 1 / (H_z * Cov_ * H_z.transpose() + measurement_certainty);
 
     // Apply update
     delta_x_ += K_z * residual;
+    // ROS_WARN_STREAM("two_sec_std_:\n"
+    //                 << two_sec_std_);
+    // ROS_WARN_STREAM("measurement_certainty:\n"
+    //                 << measurement_certainty);
     Cov_ -= K_z * H_z * Cov_;
+    stateFeedback();
+    delta_x_.setZero();
+  }
 
-    // Update pose with the correction
-    bodystate_cur_.pose.translation().z() += delta_x_(2);
-
+  void LIOEKF::lidarUpdate()
+  {
+    laserUpUpdate();
     auto [source, frame_downsample] = processScan();
     Eigen::Matrix6d imu_pose_covariance = Eigen::Matrix6d::Identity();
     imu_pose_covariance.block<3, 3>(0, 0) =

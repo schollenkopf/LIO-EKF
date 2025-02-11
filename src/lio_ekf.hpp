@@ -30,6 +30,7 @@
 #include <ros/ros.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <vector>
+#include <cmath>
 
 #include "imuPropagation.hpp"
 #include "kiss_icp/core/Threshold.hpp"
@@ -111,7 +112,23 @@ namespace lio_ekf
       double timestamp = laser_up_time_buffer_.front();
       double range = laser_up_buffer_.front();
       laser_up_ = range;
+
+      if (!initial_depth_set_)
+      {
+        initial_depth_ = range;
+        initial_depth_set_ = true;
+      }
+
       laser_up_t_ = timestamp;
+
+      if (laser_up_history_.size() >= 20)
+      {
+        laser_up_history_.pop_front();
+      }
+      laser_up_history_.push_back(range);
+
+      computeStdDev();
+
       laser_up_buffer_.pop_front();
       laser_up_time_buffer_.pop_front();
     }
@@ -173,6 +190,7 @@ namespace lio_ekf
     void statePropagation(IMU &imupre, IMU &imucur);
 
     auto processScan();
+    void laserUpUpdate();
     void lidarUpdate();
 
     void ekfPredict(Eigen::Matrix15d &Phi, Eigen::Matrix15d &Qd);
@@ -217,6 +235,41 @@ namespace lio_ekf
 
     // last laser up measurement
     double laser_up_;
+    double initial_depth_;
+    bool initial_depth_set_ = false;
+    std::deque<double> laser_up_history_; // Stores last 20 readings
+    double two_sec_std_;                  // Standard deviation of last 20 readings
+
+    void computeStdDev()
+    {
+      if (laser_up_history_.empty())
+      {
+        two_sec_std_ = 0.0;
+        return;
+      }
+
+      double sum = 0.0;
+      double mean = 0.0;
+      int size = laser_up_history_.size();
+
+      // Compute mean
+      for (double val : laser_up_history_)
+      {
+        sum += val;
+      }
+      mean = sum / size;
+
+      // Compute variance
+      double variance = 0.0;
+      for (double val : laser_up_history_)
+      {
+        variance += (val - mean) * (val - mean);
+      }
+      variance /= size; // Using population variance (N instead of N-1)
+
+      // Compute standard deviation
+      two_sec_std_ = std::sqrt(variance);
+    }
 
     // raw imudata
     IMU imupre_; // previous imu data

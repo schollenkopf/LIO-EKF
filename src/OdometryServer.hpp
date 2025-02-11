@@ -53,7 +53,7 @@ namespace lio_ekf
     void laser_up_cbk(const sensor_msgs::RangeConstPtr &msg);
 
     void writeResults(std::ofstream &odo);
-
+    Eigen::Matrix3d enforceOrthogonality(Eigen::Matrix3d &R);
     void publishMsgs();
 
     std::deque<std_msgs::Header> lidar_header_buffer_;
