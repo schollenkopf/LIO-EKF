@@ -24,7 +24,9 @@ project(lio_ekf)
 
 SET(CMAKE_BUILD_TYPE "Release")
 SET(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
+
 find_package(Eigen3 REQUIRED)
+find_package(PCL REQUIRED)
 
 find_package(
   catkin REQUIRED
@@ -52,6 +54,10 @@ if(NOT TARGET kiss_icp::core)
   add_subdirectory(${kiss-icp_SOURCE_DIR}/cpp/kiss_icp ${kiss-icp_BINARY_DIR})
 endif()
 
+include_directories(${PCL_INCLUDE_DIRS})
+link_directories(${PCL_LIBRARY_DIRS})
+add_definitions(${PCL_DEFINITIONS})
+
 
 # ROS1 node
 add_executable(lio_ekf_node ${CMAKE_CURRENT_SOURCE_DIR}/src/lio_ekf.cpp 
@@ -62,7 +68,8 @@ target_include_directories(lio_ekf_node PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src $
  
 target_link_libraries(lio_ekf_node 
                       kiss_icp::core 
-                      Eigen3::Eigen 
+                      Eigen3::Eigen
+                      ${PCL_LIBRARIES}
                       ${catkin_LIBRARIES} )
 
 install(TARGETS lio_ekf_node RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})

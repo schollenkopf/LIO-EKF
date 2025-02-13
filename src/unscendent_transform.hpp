@@ -34,43 +34,67 @@ static constexpr double w = 1.0 / num_sigma_points;
 using MatrixType = Eigen::Matrix<double, dim, dim>;
 using SigmaPoints = std::vector<Sophus::SE3d>;
 
+// SigmaPoints toSigmaPoints(const Sophus::SE3d &mean,
+//                           const MatrixType &covariance)
+// {
+//   SigmaPoints sigma_points(num_sigma_points);
+//   sigma_points[0] = mean;
+//   Eigen::LLT<MatrixType> chol(covariance);
+//   const MatrixType L = chol.matrixL();
+//   auto positive_transform = std::transform(
+//       L.colwise().begin(), L.colwise().end(), std::next(sigma_points.begin()),
+//       [&](const auto &column)
+//       { return Sophus::SE3d::exp(column) * mean; });
+//   std::transform(L.colwise().begin(), L.colwise().end(), positive_transform,
+//                  [&](const auto &column)
+//                  {
+//                    return Sophus::SE3d::exp(-1.0 * column) * mean;
+//                  });
+//   return sigma_points;
+// }
+
 SigmaPoints toSigmaPoints(const Sophus::SE3d &mean,
-                          const MatrixType &covariance) {
+                          const MatrixType &covariance)
+{
   SigmaPoints sigma_points(num_sigma_points);
   sigma_points[0] = mean;
   Eigen::LLT<MatrixType> chol(covariance);
   const MatrixType L = chol.matrixL();
-  auto positive_transform = std::transform(
-      L.colwise().begin(), L.colwise().end(), std::next(sigma_points.begin()),
-      [&](const auto &column) { return Sophus::SE3d::exp(column) * mean; });
-  std::transform(L.colwise().begin(), L.colwise().end(), positive_transform,
-                 [&](const auto &column) {
-                   return Sophus::SE3d::exp(-1.0 * column) * mean;
-                 });
+  for (int i = 0; i < L.cols(); ++i)
+  {
+    Eigen::VectorXd column = L.col(i);
+    sigma_points[i + 1] = Sophus::SE3d::exp(column) * mean;             // Positive transform
+    sigma_points[i + 1 + L.cols()] = Sophus::SE3d::exp(-column) * mean; // Negative transform
+  }
+
   return sigma_points;
 }
 
 std::vector<double>
 propagate(const SigmaPoints &sigma_points,
-          std::function<double(const Sophus::SE3d &)> callable) {
+          std::function<double(const Sophus::SE3d &)> callable)
+{
   std::vector<double> new_sigma_points(sigma_points.size());
   std::transform(sigma_points.cbegin(), sigma_points.cend(),
                  new_sigma_points.begin(), callable);
   return new_sigma_points;
 }
 
-double getVariance(const std::vector<double> &sigma_points_single) {
+double getVariance(const std::vector<double> &sigma_points_single)
+{
   double mu = 0.0;
   mu = w * std::reduce(sigma_points_single.cbegin(), sigma_points_single.cend(),
-                       mu, [](double sum, const double &element) {
+                       mu, [](double sum, const double &element)
+                       {
                          sum += element;
-                         return std::move(sum);
-                       });
-  auto square = [](const double &x) -> double { return x * x; };
+                         return std::move(sum); });
+  auto square = [](const double &x) -> double
+  { return x * x; };
   double variance = 0.0;
   variance = 0.5 * std::reduce(sigma_points_single.cbegin(),
                                sigma_points_single.cend(), variance,
-                               [&](double sum, const double &element) {
+                               [&](double sum, const double &element)
+                               {
                                  sum += square(element - mu);
                                  return std::move(sum);
                                });
@@ -78,8 +102,10 @@ double getVariance(const std::vector<double> &sigma_points_single) {
 }
 
 double propagateUscendent(const Sophus::SE3d &mean,
-                          const MatrixType &covariance) {
-  auto tau = [](const Sophus::SE3d &pose) {
+                          const MatrixType &covariance)
+{
+  auto tau = [](const Sophus::SE3d &pose)
+  {
     return pose.translation().norm() +
            2.0 * 100 * std::sin(0.5 * pose.so3().log().norm());
   };

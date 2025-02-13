@@ -19,13 +19,13 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
+#include "unscendent_transform.hpp"
 #include "lio_ekf.hpp"
 #include "kiss_icp/core/Deskew.hpp"
 #include "kiss_icp/core/Preprocessing.hpp"
 #include "kiss_icp/pipeline/KissICP.hpp"
 #include "lio_types.hpp"
 #include "rotation.hpp"
-#include "unscendent_transform.hpp"
 #include <Eigen/Sparse>
 #include <algorithm>
 #include <execution>
@@ -313,7 +313,7 @@ namespace lio_ekf
     Sophus::SE3d current_pose_scan = bodystate_cur_.pose * lidar_to_imu;
     curpoints_w_ = kiss_icp::DeSkewScan(curpoints_, timestamps_per_points_,
                                         previous_pose_scan, current_pose_scan);
-    const auto cropped_frame = kiss_icp::Preprocess(
+    auto cropped_frame = kiss_icp::Preprocess(
         curpoints_w_, liopara_.max_range, liopara_.min_range);
     auto [source, frame_downsample] = Voxelize(cropped_frame);
     auto source_in_imu_frame = source;
@@ -324,6 +324,8 @@ namespace lio_ekf
     TransformPoints(lidar_to_imu_origin, keypoints_w_);
     TransformPoints(lidar_to_imu_origin, curpoints_w_);
 
+    curpoints_w_ = findLadder(curpoints_w_);
+
     return std::make_tuple(source_in_imu_frame, frame_downsample);
   }
 
@@ -332,10 +334,20 @@ namespace lio_ekf
     // --- Ceiling Measurement Update Step ---
     double distance_to_top = laser_up_;
     double z_robot = bodystate_cur_.pose.translation().z();
-    double measurement_certainty = pow(10, -two_sec_std_);
+
+    double measurement_certainty = 0.8;
+    if (std::abs(last_valid_distance_to_top_ - distance_to_top) > 1.5)
+    {
+      measurement_certainty = 0.2;
+    }
+    else
+    {
+      last_valid_distance_to_top_ = distance_to_top;
+    }
+    ROS_WARN("valid distance %f", last_valid_distance_to_top_);
 
     // Compute residual
-    double residual = (initial_depth_ + z_robot) - distance_to_top;
+    double residual = (initial_depth_ + z_robot) - last_valid_distance_to_top_;
 
     // Jacobian H_z (only affects z-position)
     Eigen::Matrix<double, 1, 15> H_z = Eigen::Matrix<double, 1, 15>::Zero();
@@ -346,19 +358,146 @@ namespace lio_ekf
 
     // Apply update
     delta_x_ += K_z * residual;
-    // ROS_WARN_STREAM("two_sec_std_:\n"
-    //                 << two_sec_std_);
-    // ROS_WARN_STREAM("measurement_certainty:\n"
-    //                 << measurement_certainty);
     Cov_ -= K_z * H_z * Cov_;
     stateFeedback();
     delta_x_.setZero();
   }
 
+  Vector3dVector LIOEKF::findLadder(Vector3dVector input_cloud_eigen)
+  {
+
+    pcl::NormalEstimation<pcl::PointXYZ, pcl::Normal> ne;
+    pcl::SACSegmentationFromNormals<pcl::PointXYZ, pcl::Normal> seg;
+    pcl::ExtractIndices<pcl::PointXYZ> extract;
+    pcl::ExtractIndices<pcl::Normal> extract_normals;
+    pcl::search::KdTree<pcl::PointXYZ>::Ptr tree(new pcl::search::KdTree<pcl::PointXYZ>());
+
+    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud = convertEigenToPCL(input_cloud_eigen);
+    pcl::PointCloud<pcl::Normal>::Ptr cloud_normals(new pcl::PointCloud<pcl::Normal>);
+    pcl::ModelCoefficients::Ptr coefficients(new pcl::ModelCoefficients);
+    pcl::PointIndices::Ptr inliers(new pcl::PointIndices);
+    pcl::PointCloud<pcl::PointXYZ>::Ptr output_cloud(new pcl::PointCloud<pcl::PointXYZ>);
+
+    std::vector<int> indices;
+    pcl::removeNaNFromPointCloud(*cloud, *cloud, indices);
+
+    // Estimate point normals
+    ne.setSearchMethod(tree);
+    ne.setInputCloud(cloud);
+    ne.setKSearch(20);
+    ne.compute(*cloud_normals);
+
+    // Find planes
+    for (int i = 0; i < 1; i++)
+    {
+      seg.setOptimizeCoefficients(true);
+      seg.setModelType(pcl::SACMODEL_NORMAL_PLANE);
+      seg.setNormalDistanceWeight(0.1);
+      seg.setMethodType(pcl::SAC_RANSAC);
+      seg.setMaxIterations(500);
+      seg.setDistanceThreshold(0.2);
+      seg.setInputCloud(cloud);
+      seg.setInputNormals(cloud_normals);
+      seg.segment(*inliers, *coefficients);
+
+      // Remove the planar inliers, extract the rest
+      extract.setInputCloud(cloud);
+      extract.setIndices(inliers);
+      extract.setNegative(true);
+      extract.filter(*cloud);
+      extract_normals.setNegative(true);
+      extract_normals.setInputCloud(cloud_normals);
+      extract_normals.setIndices(inliers);
+      extract_normals.filter(*cloud_normals);
+    }
+
+    // Find cylinder
+    seg.setModelType(pcl::SACMODEL_CYLINDER);
+    seg.setNormalDistanceWeight(0.1);
+    seg.setMaxIterations(500);
+    seg.setDistanceThreshold(0.23);
+    seg.setRadiusLimits(2, 8);
+    seg.setInputCloud(cloud);
+    seg.setInputNormals(cloud_normals);
+    seg.segment(*inliers, *coefficients);
+
+    // Remove the cylinder inliers
+    extract.setInputCloud(cloud);
+    extract.setIndices(inliers);
+    extract.setNegative(true);
+    extract.filter(*cloud);
+    extract_normals.setNegative(true);
+    extract_normals.setInputCloud(cloud_normals);
+    extract_normals.setIndices(inliers);
+    extract_normals.filter(*cloud_normals);
+
+    // Clean point cloud
+    pcl::RadiusOutlierRemoval<pcl::PointXYZ> outrem;
+    // build the filter
+    outrem.setInputCloud(cloud);
+    outrem.setRadiusSearch(0.04);
+    outrem.setMinNeighborsInRadius(4);
+    outrem.setKeepOrganized(true);
+    // apply filter
+    outrem.filter(*cloud);
+
+    // pcl::SACSegmentation<pcl::PointXYZ> seg2;
+    // seg2.setOptimizeCoefficients(true);
+    // seg2.setModelType(pcl::SACMODEL_LINE);
+    // seg2.setMethodType(pcl::SAC_RANSAC);
+    // seg2.setDistanceThreshold(0.04);
+    // seg2.setMaxIterations(2000);
+    // // seg2.setSamplesMaxDist(3);
+    // Eigen::Vector3f lineNormal = Eigen::Vector3f(3);
+    // lineNormal << 1, 0, 0;
+    // seg2.setAxis(lineNormal);
+    // seg2.setEpsAngle(0.1);
+
+    // pcl::PointCloud<pcl::PointXYZ>::Ptr vertical_lines(new pcl::PointCloud<pcl::PointXYZ>);
+    // pcl::PointCloud<pcl::PointXYZ>::Ptr line_cloud(new pcl::PointCloud<pcl::PointXYZ>);
+
+    // int lines = 0;
+    // int attempts = 0;
+    // while (lines < 2 && attempts < 20)
+    // {
+    //   seg2.setInputCloud(cloud);
+    //   seg2.segment(*inliers, *coefficients);
+
+    //   if (inliers->indices.empty())
+    //     break;
+
+    //   if (isVerticalLine(coefficients))
+    //   {
+    //     extract.setInputCloud(cloud);
+    //     extract.setIndices(inliers);
+    //     extract.setNegative(false);
+    //     extract.filter(*line_cloud);
+    //     *vertical_lines += *line_cloud;
+    //     lines++;
+    //   }
+    //   attempts++;
+
+    //   // Remove detected line from the cloud to find the next one
+    //   // extract.setInputCloud(cloud);
+    //   // extract.setIndices(inliers);
+    //   // extract.setNegative(true);
+    //   // extract.filter(*cloud);
+    //   // lines++;
+    // }
+
+    // pcl::PointCloud<pcl::PointXYZ>::Ptr source_cloud = convertEigenToPCL(source);
+    // *cloud += *source_cloud;
+    Vector3dVector filtered_eigen_cloud = convertPCLToEigen(cloud);
+
+    return filtered_eigen_cloud;
+  }
+
   void LIOEKF::lidarUpdate()
   {
     laserUpUpdate();
+
     auto [source, frame_downsample] = processScan();
+
     Eigen::Matrix6d imu_pose_covariance = Eigen::Matrix6d::Identity();
     imu_pose_covariance.block<3, 3>(0, 0) =
         Imu_Prediction_Covariance_.block<3, 3>(0, 0);
@@ -600,8 +739,6 @@ namespace lio_ekf
 
     pose.block<3, 3>(0, 0) = R1 * R2;
     pose.block<3, 1>(0, 3) = T1 + R1 * T2;
-
     return pose;
   }
-
-} // namespace lio_ekf
+} // namespace liok

@@ -20,7 +20,6 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 #pragma once
-
 #include <Eigen/Dense>
 #include <deque>
 #include <geometry_msgs/PoseStamped.h>
@@ -37,6 +36,17 @@
 #include "kiss_icp/core/VoxelHashMap.hpp"
 #include "kiss_icp/pipeline/KissICP.hpp"
 #include "lio_types.hpp"
+
+#include <pcl/io/pcd_io.h>
+#include <pcl/point_types.h>
+#include <pcl/sample_consensus/ransac.h>
+#include <pcl/sample_consensus/sac_model_cylinder.h>
+#include <pcl/segmentation/sac_segmentation.h>
+#include <pcl/filters/extract_indices.h>
+#include <pcl/ModelCoefficients.h>
+#include <pcl/features/normal_3d.h>
+#include <pcl/filters/radius_outlier_removal.h>
+
 // namespace Eigen
 namespace lio_ekf
 {
@@ -116,19 +126,11 @@ namespace lio_ekf
       if (!initial_depth_set_)
       {
         initial_depth_ = range;
+        last_valid_distance_to_top_ = range;
         initial_depth_set_ = true;
       }
 
       laser_up_t_ = timestamp;
-
-      if (laser_up_history_.size() >= 20)
-      {
-        laser_up_history_.pop_front();
-      }
-      laser_up_history_.push_back(range);
-
-      computeStdDev();
-
       laser_up_buffer_.pop_front();
       laser_up_time_buffer_.pop_front();
     }
@@ -193,6 +195,8 @@ namespace lio_ekf
     void laserUpUpdate();
     void lidarUpdate();
 
+    Vector3dVector findLadder(Vector3dVector downsampled_cloud);
+
     void ekfPredict(Eigen::Matrix15d &Phi, Eigen::Matrix15d &Qd);
 
     void ekfUpdate(Eigen::MatrixXd &dz, Eigen::MatrixXd &H, Eigen::MatrixXd &R);
@@ -236,40 +240,8 @@ namespace lio_ekf
     // last laser up measurement
     double laser_up_;
     double initial_depth_;
+    double last_valid_distance_to_top_;
     bool initial_depth_set_ = false;
-    std::deque<double> laser_up_history_; // Stores last 20 readings
-    double two_sec_std_;                  // Standard deviation of last 20 readings
-
-    void computeStdDev()
-    {
-      if (laser_up_history_.empty())
-      {
-        two_sec_std_ = 0.0;
-        return;
-      }
-
-      double sum = 0.0;
-      double mean = 0.0;
-      int size = laser_up_history_.size();
-
-      // Compute mean
-      for (double val : laser_up_history_)
-      {
-        sum += val;
-      }
-      mean = sum / size;
-
-      // Compute variance
-      double variance = 0.0;
-      for (double val : laser_up_history_)
-      {
-        variance += (val - mean) * (val - mean);
-      }
-      variance /= size; // Using population variance (N instead of N-1)
-
-      // Compute standard deviation
-      two_sec_std_ = std::sqrt(variance);
-    }
 
     // raw imudata
     IMU imupre_; // previous imu data
@@ -315,5 +287,44 @@ namespace lio_ekf
     bool lio_initialized_ = false;
     bool is_first_imu_ = true;
     bool is_first_lidar_ = true;
+
+    pcl::PointCloud<pcl::PointXYZ>::Ptr convertEigenToPCL(const std::vector<Eigen::Vector3d> &eigenCloud)
+    {
+      pcl::PointCloud<pcl::PointXYZ>::Ptr pclCloud(new pcl::PointCloud<pcl::PointXYZ>);
+      for (const auto &point : eigenCloud)
+      {
+        pclCloud->push_back(pcl::PointXYZ(point.x(), point.y(), point.z()));
+      }
+      pclCloud->is_dense = false;
+      return pclCloud;
+    }
+
+    Vector3dVector convertPCLToEigen(const pcl::PointCloud<pcl::PointXYZ>::Ptr &pclCloud)
+    {
+      Vector3dVector eigenCloud;
+      for (const auto &point : pclCloud->points)
+      {
+        eigenCloud.emplace_back(point.x, point.y, point.z);
+      }
+      return eigenCloud;
+    }
+
+    bool isVerticalLine(const pcl::ModelCoefficients::Ptr &coefficients)
+    {
+
+      double dx = coefficients->values[3];
+      double dy = coefficients->values[4];
+      double dz = coefficients->values[5];
+
+      double length = std::sqrt(dx * dx + dy * dy + dz * dz);
+      if (length == 0)
+        return false; // Avoid division by zero
+
+      dz /= length;
+
+      double angle = std::acos(std::abs(dz)) * 180.0 / M_PI;
+
+      return (dz > 0.9); // Allow small deviations from vertical
+    }
   };
 } // namespace lio_ekf
