@@ -335,10 +335,10 @@ namespace lio_ekf
     double distance_to_top = laser_up_;
     double z_robot = bodystate_cur_.pose.translation().z();
 
-    double measurement_certainty = 0.8;
+    double measurement_uncertainty = 0.001;
     if (std::abs(last_valid_distance_to_top_ - distance_to_top) > 1.5)
     {
-      measurement_certainty = 0.2;
+      measurement_uncertainty = 0.2;
     }
     else
     {
@@ -354,11 +354,15 @@ namespace lio_ekf
     H_z(0, 2) = 1.0; // Only updates z-position
 
     // Compute Kalman Gain
-    Eigen::Matrix<double, 15, 1> K_z = Cov_ * H_z.transpose() * 1 / (H_z * Cov_ * H_z.transpose() + measurement_certainty);
+    Eigen::Matrix<double, 15, 1> K_z = Cov_ * H_z.transpose() * 1 / (H_z * Cov_ * H_z.transpose() + measurement_uncertainty);
 
     // Apply update
     delta_x_ += K_z * residual;
+    ROS_WARN_STREAM("delta_x_:\n"
+                    << delta_x_);
     Cov_ -= K_z * H_z * Cov_;
+    ROS_WARN_STREAM("COV_ laser up:\n"
+                    << Cov_);
     stateFeedback();
     delta_x_.setZero();
   }
@@ -575,6 +579,8 @@ namespace lio_ekf
 
       Eigen::Matrix15d S_inv = (HTRH + Cov_.inverse()).inverse();
       delta_x_ = S_inv * HTRz;
+      ROS_WARN_STREAM("delta x lidar:\n"
+                      << delta_x_);
       KH = S_inv * HTRH;
       stateFeedback();
 
@@ -586,6 +592,8 @@ namespace lio_ekf
       delta_x_.setZero();
     }
     Cov_ -= KH * Cov_;
+    ROS_WARN_STREAM("cov lidar:\n"
+                    << Cov_);
 
     Sophus::SE3d pose_in_lidar_frame =
         bodystate_cur_.pose * Sophus::SE3d(liopara_.Trans_lidar_imu);
