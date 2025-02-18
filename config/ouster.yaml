@@ -1,6 +1,6 @@
 common:
     lidar_topic:  "/ouster/points"
-    imu_topic:  "/ouster/imu"
+    imu_topic:  "/imu/data"
     laser_up_topic: "/mavros/distance_sensor/up"
 
 lidar:
@@ -8,9 +8,9 @@ lidar:
     preprocess: true
     max_range: 300.0 
     min_range: 0.8
-    max_points_per_voxel: 10
-    voxel_size: 0.1
-    max_iteration: 10
+    max_points_per_voxl: 10
+    voxel_size: 0.01
+    max_iteration: 10000
 
 imu:
     # IMU noise parameters
@@ -34,8 +34,8 @@ lio:
                     0,0,1]
     #transform the imu frame to front-right-down (which is used in the code)
     imu_tran_R: [ 1,0,0,
-                0, -1,0,
-                0, 0, -1 ]
+                0, 1,0,
+                0, 0, 1 ]
     # imu_tran_R: [ 0.7071068,0,-0.7071068,
     #           0,-1,0,
     #           -0.7071068,  0,  -0.7071068]

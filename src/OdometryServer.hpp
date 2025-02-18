@@ -58,6 +58,8 @@ namespace lio_ekf
 
     std::deque<std_msgs::Header> lidar_header_buffer_;
 
+    ros::Publisher icp_debug_publisher_;
+
   private:
     lio_ekf::LIOPara lio_para_; // parameters for lidar-inertial fusion
     lio_ekf::LIOEKF lio_ekf_;   // lidar-inertial processor

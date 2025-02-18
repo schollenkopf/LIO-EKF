@@ -206,6 +206,10 @@ namespace lio_ekf
         nh_.advertise<sensor_msgs::PointCloud2>("keypoints", queue_size_);
     map_publisher_ =
         nh_.advertise<sensor_msgs::PointCloud2>("local_map", queue_size_);
+    icp_debug_publisher_ =
+        nh_.advertise<sensor_msgs::PointCloud2>("icp_debug", queue_size_);
+
+    lio_ekf_.setIcpDebug(icp_debug_publisher_);
 
     // Intialize trajectory publisher
     path_msg_.header.frame_id = odom_frame_;
@@ -304,17 +308,17 @@ namespace lio_ekf
     imu_meas.timestamp = timestamp;
 
     imu_meas.dt = timestamp - last_timestamp_imu_;
-    imu_meas.angular_velocity << 0, 0,
-        0;
+    // imu_meas.angular_velocity << 0, 0,
+    //     0;
 
-    // imu_meas.angular_velocity << msg->angular_velocity.x, msg->angular_velocity.y,
-    //     msg->angular_velocity.z;
+    imu_meas.angular_velocity << msg->angular_velocity.x, msg->angular_velocity.y,
+        msg->angular_velocity.z;
 
-    // imu_meas.linear_acceleration << msg->linear_acceleration.x,
-    //     msg->linear_acceleration.y, msg->linear_acceleration.z;
+    imu_meas.linear_acceleration << msg->linear_acceleration.x,
+        msg->linear_acceleration.y, msg->linear_acceleration.z;
 
-    imu_meas.linear_acceleration << 0,
-        0, 0;
+    // imu_meas.linear_acceleration << 0,
+    //     0, 0;
 
     imu_meas.angular_velocity = lio_para_.imu_tran_R * imu_meas.angular_velocity;
     imu_meas.linear_acceleration =
@@ -440,6 +444,9 @@ namespace lio_ekf
 
     newpose = lio_ekf_.poseTran(newpose, tmp);
     rotM = newpose.block<3, 3>(0, 0);
+    ROS_WARN_STREAM("Pose" << newpose);
+    ROS_WARN_STREAM("vel" << navstate.vel);
+    // ROS_WARN_STREAM("imu err" << navstate.imuerror);
     Eigen::Quaterniond q_current = Rotation::matrix2quaternion(rotM);
 
     Eigen::Vector3d t_current = newpose.block<3, 1>(0, 3);

@@ -34,6 +34,7 @@
 #include <tbb/blocked_range.h>
 #include <tbb/parallel_for.h>
 #include <tbb/parallel_reduce.h>
+#include "Utils.hpp"
 
 namespace
 {
@@ -137,7 +138,8 @@ namespace lio_ekf
       break;
     }
     }
-
+    curpoints_ = findLadder(curpoints_);
+    curpoints_.insert(curpoints_.end(), curpoints_.begin(), curpoints_.end());
     lio_map_.Update(curpoints_, initLidarpose_w);
     is_first_lidar_ = false;
     last_update_t_ = lidar_t_;
@@ -306,25 +308,48 @@ namespace lio_ekf
     ekfPredict(State_Transition_Mat, Process_Noise_Cov);
   }
 
+  auto LIOEKF::processScanLadder()
+  {
+    Sophus::SE3d lidar_to_imu = Sophus::SE3d(liopara_.Trans_lidar_imu);
+    Sophus::SE3d previous_pose_scan = bodystate_pre_.pose * lidar_to_imu;
+    Sophus::SE3d current_pose_scan = bodystate_cur_.pose * lidar_to_imu;
+    auto deskewed = kiss_icp::DeSkewScan(curpoints_, timestamps_per_points_,
+                                         previous_pose_scan, current_pose_scan);
+    auto cropped_frame = kiss_icp::Preprocess(
+        deskewed, liopara_.max_range, liopara_.min_range);
+    auto ladderScan = findLadder(cropped_frame);
+    curpoints_w_ = deskewed;
+    const Eigen::Matrix4d &lidar_to_imu_origin = liopara_.Trans_lidar_imu_origin;
+    TransformPoints(lidar_to_imu_origin, curpoints_w_);
+    auto ladderScanImuFrame = ladderScan;
+    TransformPoints(lidar_to_imu.matrix(), ladderScanImuFrame);
+    return std::make_tuple(ladderScanImuFrame, ladderScan);
+  }
+
   auto LIOEKF::processScan()
   {
     Sophus::SE3d lidar_to_imu = Sophus::SE3d(liopara_.Trans_lidar_imu);
     Sophus::SE3d previous_pose_scan = bodystate_pre_.pose * lidar_to_imu;
     Sophus::SE3d current_pose_scan = bodystate_cur_.pose * lidar_to_imu;
+    curpoints_ = findLadder(curpoints_);
     curpoints_w_ = kiss_icp::DeSkewScan(curpoints_, timestamps_per_points_,
                                         previous_pose_scan, current_pose_scan);
     auto cropped_frame = kiss_icp::Preprocess(
         curpoints_w_, liopara_.max_range, liopara_.min_range);
     auto [source, frame_downsample] = Voxelize(cropped_frame);
+
+    // source.insert(source.end(), ladder.begin(), ladder.end());
+    // frame_downsample.insert(frame_downsample.end(), ladder.begin(), ladder.end());
     auto source_in_imu_frame = source;
-    keypoints_w_ = source;
+
+    keypoints_w_ = source_in_imu_frame;
     TransformPoints(lidar_to_imu.matrix(), source_in_imu_frame);
 
     const Eigen::Matrix4d &lidar_to_imu_origin = liopara_.Trans_lidar_imu_origin;
     TransformPoints(lidar_to_imu_origin, keypoints_w_);
     TransformPoints(lidar_to_imu_origin, curpoints_w_);
 
-    curpoints_w_ = findLadder(curpoints_w_);
+    // curpoints_w_ = findLadder(curpoints_w_);
 
     return std::make_tuple(source_in_imu_frame, frame_downsample);
   }
@@ -335,15 +360,17 @@ namespace lio_ekf
     double distance_to_top = laser_up_;
     double z_robot = bodystate_cur_.pose.translation().z();
 
-    double measurement_uncertainty = 0.001;
+    double measurement_uncertainty = 0.01;
     if (std::abs(last_valid_distance_to_top_ - distance_to_top) > 1.5)
     {
       measurement_uncertainty = 0.2;
     }
     else
     {
+      laser_up_change_ = std::abs(last_valid_distance_to_top_ - distance_to_top);
       last_valid_distance_to_top_ = distance_to_top;
     }
+    ROS_WARN("LASER UP");
     ROS_WARN("valid distance %f", last_valid_distance_to_top_);
 
     // Compute residual
@@ -357,12 +384,17 @@ namespace lio_ekf
     Eigen::Matrix<double, 15, 1> K_z = Cov_ * H_z.transpose() * 1 / (H_z * Cov_ * H_z.transpose() + measurement_uncertainty);
 
     // Apply update
+
     delta_x_ += K_z * residual;
-    ROS_WARN_STREAM("delta_x_:\n"
-                    << delta_x_);
+    ROS_WARN_STREAM("\nError State Vector (delta_x):"
+                    << "\n  Position Error (Δt)     : " << delta_x_.segment<3>(0).transpose()
+                    << "\n  Velocity Error (Δv)     : " << delta_x_.segment<3>(3).transpose()
+                    << "\n  Attitude Error (Δϕ)     : " << delta_x_.segment<3>(6).transpose()
+                    << "\n  Gyroscope Bias (Δb_g)  : " << delta_x_.segment<3>(9).transpose()
+                    << "\n  Accelerometer Bias (Δb_a): " << delta_x_.segment<3>(12).transpose());
     Cov_ -= K_z * H_z * Cov_;
-    ROS_WARN_STREAM("COV_ laser up:\n"
-                    << Cov_);
+    // ROS_WARN_STREAM("COV_ laser up:\n"
+    //                 << Cov_);
     stateFeedback();
     delta_x_.setZero();
   }
@@ -445,50 +477,6 @@ namespace lio_ekf
     // apply filter
     outrem.filter(*cloud);
 
-    // pcl::SACSegmentation<pcl::PointXYZ> seg2;
-    // seg2.setOptimizeCoefficients(true);
-    // seg2.setModelType(pcl::SACMODEL_LINE);
-    // seg2.setMethodType(pcl::SAC_RANSAC);
-    // seg2.setDistanceThreshold(0.04);
-    // seg2.setMaxIterations(2000);
-    // // seg2.setSamplesMaxDist(3);
-    // Eigen::Vector3f lineNormal = Eigen::Vector3f(3);
-    // lineNormal << 1, 0, 0;
-    // seg2.setAxis(lineNormal);
-    // seg2.setEpsAngle(0.1);
-
-    // pcl::PointCloud<pcl::PointXYZ>::Ptr vertical_lines(new pcl::PointCloud<pcl::PointXYZ>);
-    // pcl::PointCloud<pcl::PointXYZ>::Ptr line_cloud(new pcl::PointCloud<pcl::PointXYZ>);
-
-    // int lines = 0;
-    // int attempts = 0;
-    // while (lines < 2 && attempts < 20)
-    // {
-    //   seg2.setInputCloud(cloud);
-    //   seg2.segment(*inliers, *coefficients);
-
-    //   if (inliers->indices.empty())
-    //     break;
-
-    //   if (isVerticalLine(coefficients))
-    //   {
-    //     extract.setInputCloud(cloud);
-    //     extract.setIndices(inliers);
-    //     extract.setNegative(false);
-    //     extract.filter(*line_cloud);
-    //     *vertical_lines += *line_cloud;
-    //     lines++;
-    //   }
-    //   attempts++;
-
-    //   // Remove detected line from the cloud to find the next one
-    //   // extract.setInputCloud(cloud);
-    //   // extract.setIndices(inliers);
-    //   // extract.setNegative(true);
-    //   // extract.filter(*cloud);
-    //   // lines++;
-    // }
-
     // pcl::PointCloud<pcl::PointXYZ>::Ptr source_cloud = convertEigenToPCL(source);
     // *cloud += *source_cloud;
     Vector3dVector filtered_eigen_cloud = convertPCLToEigen(cloud);
@@ -496,11 +484,9 @@ namespace lio_ekf
     return filtered_eigen_cloud;
   }
 
-  void LIOEKF::lidarUpdate()
+  void LIOEKF::lidarLadderUpdate()
   {
-    laserUpUpdate();
-
-    auto [source, frame_downsample] = processScan();
+    auto [lidarScanSource, frame_ladder_downsample] = processScanLadder();
 
     Eigen::Matrix6d imu_pose_covariance = Eigen::Matrix6d::Identity();
     imu_pose_covariance.block<3, 3>(0, 0) =
@@ -524,17 +510,20 @@ namespace lio_ekf
     // double max_correspondence_distance = 1.0;
     double max_correspondence_distance =
         6 * std::sqrt(uncertanty_motion + map_uncertanty + range_uncertanty);
+    ROS_WARN("process ladder max corr dist: %f", max_correspondence_distance);
 
     Eigen::Vector15d last_dx = Eigen::Vector15d::Zero();
     double weight = 1000;
     Eigen::Matrix3d R_inv = Eigen::Matrix3d::Identity() * weight;
     int j = 0;
     const auto &cur_pose = bodystate_cur_.pose;
+    // ROS_WARN_STREAM("POSE before ladder scan:\n"
+    //                 << bodystate_cur_.pose);
 
     Eigen::Matrix15d KH;
-    for (j = 0; j < liopara_.max_iteration; ++j)
+    for (j = 0; j < 50; ++j)
     {
-      Vector3dVector points_w = source;
+      Vector3dVector points_w = lidarScanSource;
 
       TransformPoints(cur_pose.matrix(), points_w);
 
@@ -579,8 +568,129 @@ namespace lio_ekf
 
       Eigen::Matrix15d S_inv = (HTRH + Cov_.inverse()).inverse();
       delta_x_ = S_inv * HTRz;
-      ROS_WARN_STREAM("delta x lidar:\n"
-                      << delta_x_);
+      // ROS_WARN_STREAM("delta x lidar ladder:\n"
+      //                 << delta_x_);
+      KH = S_inv * HTRH;
+      stateFeedback();
+
+      if ((delta_x_ - last_dx).norm() < 0.001)
+      {
+        ROS_WARN("done with icp early");
+        break;
+      }
+      last_dx = delta_x_;
+      delta_x_.setZero();
+    }
+    // ROS_WARN_STREAM("POSE after ladder scan:\n"
+    //                 << bodystate_cur_.pose);
+    Cov_ -= KH * Cov_;
+
+    Sophus::SE3d pose_in_lidar_frame =
+        bodystate_cur_.pose * Sophus::SE3d(liopara_.Trans_lidar_imu);
+    Imu_Prediction_Covariance_.setZero();
+    lio_map_.Update(frame_ladder_downsample, pose_in_lidar_frame);
+    // last_update_t_ = lidar_t_;
+  }
+
+  void LIOEKF::lidarUpdate()
+  {
+    // laserUpUpdate();
+    // lidarLadderUpdate();
+    ROS_WARN("Lidar update");
+
+    auto [source, frame_downsample] = processScan();
+
+    Eigen::Matrix6d imu_pose_covariance = Eigen::Matrix6d::Identity();
+    imu_pose_covariance.block<3, 3>(0, 0) =
+        Imu_Prediction_Covariance_.block<3, 3>(0, 0);
+    imu_pose_covariance.block<3, 3>(3, 3) =
+        Imu_Prediction_Covariance_.block<3, 3>(6, 6);
+    imu_pose_covariance.block<3, 3>(0, 3) =
+        Imu_Prediction_Covariance_.block<3, 3>(0, 6);
+    imu_pose_covariance.block<3, 3>(3, 0) =
+        Imu_Prediction_Covariance_.block<3, 3>(6, 0);
+    const auto relative_pose =
+        bodystate_pre_.pose.inverse() * bodystate_cur_.pose;
+    const auto initial_guess = bodystate_cur_.pose;
+    auto square = [](const double &x)
+    { return x * x; };
+    double uncertanty_motion =
+        propagateUscendent(relative_pose, imu_pose_covariance);
+    double map_uncertanty =
+        square(liopara_.voxel_size / std::sqrt(liopara_.max_points_per_voxel));
+    double range_uncertanty = square(0.05);
+    // double max_correspondence_distance = 1.0;
+    double max_correspondence_distance =
+        6 * std::sqrt(uncertanty_motion + map_uncertanty + range_uncertanty + laser_up_change_);
+
+    Eigen::Vector15d last_dx = Eigen::Vector15d::Zero();
+    double weight = 1000;
+    Eigen::Matrix3d R_inv = Eigen::Matrix3d::Identity() * weight;
+    int j = 0;
+    const auto &cur_pose = bodystate_cur_.pose;
+
+    Eigen::Matrix15d KH;
+    ROS_WARN_STREAM("Points in map: " << lio_map_.map_.size());
+
+    Vector3dVector debug_cloud = source;
+    TransformPoints(cur_pose.matrix(), debug_cloud);
+    icp_debug_publisher_.publish(*std::move(kiss_icp_ros::utils::EigenToPointCloud2(
+        debug_cloud, lidar_header_)));
+    for (j = 0; j < liopara_.max_iteration; ++j)
+    {
+      Vector3dVector points_w = source;
+
+      TransformPoints(cur_pose.matrix(), points_w);
+
+      const auto &[src, tgt] =
+          lio_map_.GetCorrespondences(points_w, max_correspondence_distance);
+
+      // ROS_WARN_STREAM("Number of correspondences found: " << src.size());
+
+      auto compute_jacobian_and_residual = [&](auto i)
+      {
+        const Eigen::Vector3d &source_pt = src[i];
+        const Eigen::Vector3d &target_pt = tgt[i];
+        ;
+        const Eigen::Vector3d residual = (source_pt - target_pt);
+        Eigen::Vector3d R_bG_p = source_pt - cur_pose.translation();
+        Eigen::Matrix3_15d H = Eigen::Matrix3_15d::Zero();
+        H.block<3, 3>(0, 0) = Eigen::Matrix3d::Identity();
+        H.block<3, 3>(0, 6) = Sophus::SO3d::hat(R_bG_p);
+        return std::make_tuple(H, residual);
+      };
+
+      const auto [HTRH, HTRz] = tbb::parallel_reduce(
+          // Range
+          tbb::blocked_range<size_t>{0, src.size()},
+          // Identity
+          ResultTuple(),
+          // 1st Lambda: Parallel computation
+          [&](const tbb::blocked_range<size_t> &r, ResultTuple J) -> ResultTuple
+          {
+            auto &[HTRH_private, HTRz_private] = J;
+            for (auto i = r.begin(); i < r.end(); ++i)
+            {
+              const auto &[H, z] = compute_jacobian_and_residual(i);
+              HTRH_private.noalias() += H.transpose() * R_inv * H;
+              HTRz_private.noalias() += H.transpose() * R_inv * z;
+            }
+            return J;
+          },
+          // 2nd Lambda: Parallel reduction of the private Jacboians
+          [&](ResultTuple a, const ResultTuple &b) -> ResultTuple
+          {
+            return a + b;
+          });
+
+      Eigen::Matrix15d S_inv = (HTRH + Cov_.inverse()).inverse();
+      delta_x_ = S_inv * HTRz;
+      // ROS_WARN_STREAM("\nError State Vector (delta_x):"
+      //                 << "\n  Position Error (Δt)     : " << delta_x_.segment<3>(0).transpose()
+      //                 << "\n  Velocity Error (Δv)     : " << delta_x_.segment<3>(3).transpose()
+      //                 << "\n  Attitude Error (Δϕ)     : " << delta_x_.segment<3>(6).transpose()
+      //                 << "\n  Gyroscope Bias (Δb_g)  : " << delta_x_.segment<3>(9).transpose()
+      //                 << "\n  Accelerometer Bias (Δb_a): " << delta_x_.segment<3>(12).transpose());
       KH = S_inv * HTRH;
       stateFeedback();
 
@@ -591,9 +701,10 @@ namespace lio_ekf
       last_dx = delta_x_;
       delta_x_.setZero();
     }
+    ROS_WARN("Exited icp after %d its", j);
     Cov_ -= KH * Cov_;
-    ROS_WARN_STREAM("cov lidar:\n"
-                    << Cov_);
+    // ROS_WARN_STREAM("cov lidar:\n"
+    //                 << Cov_);
 
     Sophus::SE3d pose_in_lidar_frame =
         bodystate_cur_.pose * Sophus::SE3d(liopara_.Trans_lidar_imu);

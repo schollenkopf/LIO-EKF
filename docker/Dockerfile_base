@@ -8,6 +8,8 @@ SHELL ["/bin/bash", "-c"]
 RUN apt update && apt install libspdlog-dev -y && apt install gdb -y
 
 
+RUN sudo apt install ros-noetic-pcl-ros -y && source opt/ros/noetic/setup.bash 
+
 
 COPY ../data/a107ac6c-305a-4208-a5a4-b4ef41c68c60/ros-bag/ /ros_bag/
 
@@ -16,6 +18,5 @@ RUN mkdir -p /catkin_ws/src
 
 RUN apt install git -y && git clone https://gitlab.com/libeigen/eigen.git && cmake eigen && make install
 
-
-
 #docker build . --file LIO-EKF/docker/Dockerfile_base  -t thesis_noetic_base
+#rosrun pcl_ros pointcloud_to_pcd input:="/local_map"

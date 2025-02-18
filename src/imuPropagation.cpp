@@ -54,7 +54,7 @@ namespace lio_ekf
     d_vfn = pvapre.pose.rotationMatrix() * d_vfb;
 
     // velocity increment due to the gravity and Coriolis force
-    // gl << 0, 0, NormG;
+    gl << 0, 0, NormG;
     d_vgn = gl * imucur.dt;
 
     // velocity update finish
