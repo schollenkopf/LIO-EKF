@@ -220,12 +220,29 @@ namespace lio_ekf
 
     signal(SIGINT, SigHandle);
 
+    bool faultyFirstLidarSkipped = false; // Likely an ouster replay artifacts but messes up first icp alignment and then breaks everything
+
     ros::Rate rate(1000);
     bool status = ros::ok();
+
     while (status)
     {
       ros::spinOnce();
-      if (!data_synced_)
+      if (!faultyFirstLidarSkipped)
+      {
+        if (!lidar_buffer_.empty())
+        {
+          lidar_buffer_.clear();
+          laser_up_buffer_.clear();
+          imu_buffer_.clear();
+          lidar_header_buffer_.clear();
+          lidar_time_buffer_.clear();
+          laser_up_time_buffer_.clear();
+          points_per_scan_time_buffer_.clear();
+          faultyFirstLidarSkipped = true;
+        }
+      }
+      else if (!data_synced_)
       {
         if (!imu_buffer_.empty() && !lidar_buffer_.empty() && !laser_up_buffer_.empty())
         {
@@ -273,15 +290,15 @@ namespace lio_ekf
             !lidar_buffer_.empty())
         {
 
-          lio_ekf_.addLidarData(lidar_buffer_, lidar_time_buffer_,
+          lio_ekf_.addLidarData(lidar_buffer_, lidar_time_buffer_, // read in the lidar and clear buffer
                                 lidar_header_buffer_,
                                 points_per_scan_time_buffer_);
         }
 
         if (!imu_buffer_.empty() &&
-            !lidar_buffer_.empty()) // make sure lidar data is already there!
+            !lidar_buffer_.empty()) // if both imu and lidar buffer contain data
         {
-          lio_ekf_.addImuData(imu_buffer_, false);
+          lio_ekf_.addImuData(imu_buffer_, false); // update with new imu data upto the received but not read in lidar
           lio_ekf_.newImuProcess();
           if (lio_ekf_.lidar_updated_)
           {

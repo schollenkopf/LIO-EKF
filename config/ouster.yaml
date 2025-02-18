@@ -4,13 +4,13 @@ common:
     laser_up_topic: "/mavros/distance_sensor/up"
 
 lidar:
-    deskew: false
+    deskew: true
     preprocess: true
     max_range: 300.0 
     min_range: 0.8
-    max_points_per_voxl: 10
-    voxel_size: 0.01
-    max_iteration: 10000
+    max_points_per_voxl: 2
+    voxel_size: 0.025
+    max_iteration: 200
 
 imu:
     # IMU noise parameters
@@ -22,20 +22,20 @@ imu:
 
 lio:
     # initial position std, north, east and down in n-frame. [m, m, m]
-    initposstd: [ 0.01, 0.01, 0.01 ]
+    initposstd: [ 0.00, 0.00, 0.00 ]
     # initial velocity std, north, east and down speed in n-frame. [m/s, m/s, m/s]
-    initvelstd: [ 0.05, 0.05, 0.05 ]
+    initvelstd: [ 0.00, 0.00, 0.00 ]
     # initial attitude std, roll, pitch and yaw std. [deg, deg, deg]
-    initattstd: [ 0.1, 0.1, 0.1 ]
+    initattstd: [ 0.0, 0.0, 0.0 ]
 
     extrinsic_T: [0, 0.0, 0]
     extrinsic_R: [1,0,0,
                     0,1,0,
                     0,0,1]
     #transform the imu frame to front-right-down (which is used in the code)
-    imu_tran_R: [ 1,0,0,
-                0, 1,0,
-                0, 0, 1 ]
+    imu_tran_R: [ 0,1,0,
+                1, 0,0,
+                0, 0, -1 ]
     # imu_tran_R: [ 0.7071068,0,-0.7071068,
     #           0,-1,0,
     #           -0.7071068,  0,  -0.7071068]
