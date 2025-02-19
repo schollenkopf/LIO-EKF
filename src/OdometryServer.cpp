@@ -135,7 +135,7 @@ namespace lio_ekf
     lio_para_.imu_tran_R = enforceOrthogonality(lio_para_.imu_tran_R);
     ROS_WARN_STREAM("imu frame rotation matrix orthogonal:\n"
                     << lio_para_.imu_tran_R);
-
+    lidar_imu_extrin_R = enforceOrthogonality(lidar_imu_extrin_R);
     // ROS_WARN("External rot %d", lidar_imu_extrin_R);
 
     // the extrinsic lidar-inertial parameters before transforming the imu frame

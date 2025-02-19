@@ -8,9 +8,9 @@ lidar:
     preprocess: true
     max_range: 300.0 
     min_range: 0.8
-    max_points_per_voxl: 2
-    voxel_size: 0.025
-    max_iteration: 200
+    max_points_per_voxl: 1
+    voxel_size: 0.05
+    max_iteration:  500
 
 imu:
     # IMU noise parameters
@@ -28,10 +28,10 @@ lio:
     # initial attitude std, roll, pitch and yaw std. [deg, deg, deg]
     initattstd: [ 0.0, 0.0, 0.0 ]
 
-    extrinsic_T: [0, 0.0, 0]
-    extrinsic_R: [1,0,0,
-                    0,1,0,
-                    0,0,1]
+    extrinsic_T: [0, 0.0, 0.2]
+    extrinsic_R: [  1.0000000,  0.0000000,  0.0000000,
+   0.0000000,  0.9659258, -0.2588190,
+   0.0000000,  0.2588190,  0.9659258 ]
     #transform the imu frame to front-right-down (which is used in the code)
     imu_tran_R: [ 0,1,0,
                 1, 0,0,

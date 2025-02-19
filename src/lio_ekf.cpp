@@ -595,7 +595,7 @@ namespace lio_ekf
       last_dx = delta_x_;
       delta_x_.setZero();
     }
-    // ROS_WARN("Exited icp after %d its", j);
+    ROS_WARN("Exited icp after %d its", j);
     Cov_ -= KH * Cov_;
     // ROS_WARN_STREAM("cov lidar:\n"
     //                 << Cov_);
@@ -733,9 +733,9 @@ namespace lio_ekf
 
     const auto voxel_size = liopara_.voxel_size;
     const auto frame_downsample =
-        kiss_icp::VoxelDownsample(frame, voxel_size * 1);
+        kiss_icp::VoxelDownsample(frame, voxel_size * 10);
     const auto source =
-        kiss_icp::VoxelDownsample(frame_downsample, voxel_size * 20); // 1.5
+        kiss_icp::VoxelDownsample(frame_downsample, voxel_size * 15); // 1.5
 
     return {source, frame_downsample};
   }
