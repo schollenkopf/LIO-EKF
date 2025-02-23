@@ -127,7 +127,7 @@ namespace lio_ekf
       {
 
         initial_depth_ = range;
-        last_valid_distance_to_top_ = range;
+        last_distance_to_top_ = range;
         initial_depth_set_ = true;
       }
 
@@ -184,9 +184,9 @@ namespace lio_ekf
         const Eigen::Vector3d &point, const double &timestamp,
         const std::vector<std::pair<double, Sophus::SE3d>> &posesWithinScan);
 
-    void setIcpDebug(ros::Publisher pub)
+    void setLidarImuExtrinR(Eigen::Matrix3d r)
     {
-      icp_debug_publisher_ = pub;
+      lidar_imu_extrin_R = r;
     }
 
   private:
@@ -237,7 +237,7 @@ namespace lio_ekf
 
     void resetCov(Eigen::Matrix15d &Cov);
 
-        ros::Publisher icp_debug_publisher_;
+    Eigen::Matrix3d lidar_imu_extrin_R;
 
   private:
     LIOPara liopara_;
@@ -250,7 +250,7 @@ namespace lio_ekf
     // last laser up measurement
     double laser_up_;
     double initial_depth_;
-    double last_valid_distance_to_top_;
+    double last_distance_to_top_;
     double laser_up_change_ = 0;
     bool initial_depth_set_ = false;
 

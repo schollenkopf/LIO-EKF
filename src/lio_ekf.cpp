@@ -360,43 +360,45 @@ namespace lio_ekf
   {
     // --- Ceiling Measurement Update Step ---
     double distance_to_top = laser_up_;
-    double z_robot = bodystate_cur_.pose.translation().z();
 
-    double measurement_uncertainty = 0.01;
-    if (std::abs(last_valid_distance_to_top_ - distance_to_top) > 1.5)
-    {
-      measurement_uncertainty = 0.2;
-    }
-    else
-    {
-      laser_up_change_ = std::abs(last_valid_distance_to_top_ - distance_to_top);
-      last_valid_distance_to_top_ = distance_to_top;
-    }
-    ROS_WARN("LASER UP");
-    ROS_WARN("valid distance %f", last_valid_distance_to_top_);
+    // Compute relative change in laser measurement
+    double relative_change = distance_to_top - last_distance_to_top_;
+    last_distance_to_top_ = distance_to_top;
 
-    // Compute residual
-    double residual = (initial_depth_ + z_robot) - last_valid_distance_to_top_;
+    // Measurement uncertainty handling
+    double measurement_uncertainty = (std::abs(relative_change) > 0.3) ? 1.0 : 0.01;
+    ROS_WARN("LASER UP Measurement: %f, Relative Change: %f", last_distance_to_top_, relative_change);
 
-    // Jacobian H_z (only affects z-position)
-    Eigen::Matrix<double, 1, 15> H_z = Eigen::Matrix<double, 1, 15>::Zero();
-    H_z(0, 2) = 1.0; // Only updates z-position
+    // Convert relative change to global frame using inverse of lidar_imu_extrin_R
+    Eigen::Vector3d measurement(0, 0, relative_change);
+    Eigen::Vector3d measurement_global = lidar_imu_extrin_R.inverse() * measurement;
+
+    // Compute residual using only relative changes
+    Eigen::Vector3d residual = -measurement_global;
+
+    // Jacobian H (affects x, y, and z positions)
+    Eigen::Matrix<double, 3, 15> H;
+    H.setZero();
+    // H(0, 0) = 1.0; // x-position update
+    H(1, 1) = 1.0; // y-position update
+    H(2, 2) = 1.0; // z-position update
 
     // Compute Kalman Gain
-    Eigen::Matrix<double, 15, 1> K_z = Cov_ * H_z.transpose() * 1 / (H_z * Cov_ * H_z.transpose() + measurement_uncertainty);
+    Eigen::Matrix<double, 15, 3> K = Cov_ * H.transpose() * (H * Cov_ * H.transpose() + measurement_uncertainty * Eigen::Matrix3d::Identity()).inverse();
 
     // Apply update
-
-    delta_x_ += K_z * residual;
+    delta_x_ += K * residual;
     ROS_WARN_STREAM("\nError State Vector (delta_x):"
                     << "\n  Position Error (Δt)     : " << delta_x_.segment<3>(0).transpose()
                     << "\n  Velocity Error (Δv)     : " << delta_x_.segment<3>(3).transpose()
                     << "\n  Attitude Error (Δϕ)     : " << delta_x_.segment<3>(6).transpose()
                     << "\n  Gyroscope Bias (Δb_g)  : " << delta_x_.segment<3>(9).transpose()
                     << "\n  Accelerometer Bias (Δb_a): " << delta_x_.segment<3>(12).transpose());
-    Cov_ -= K_z * H_z * Cov_;
-    // ROS_WARN_STREAM("COV_ laser up:\n"
-    //                 << Cov_);
+
+    // Update covariance matrix
+    Cov_ -= K * H * Cov_;
+
+    // Apply state feedback and reset error state
     stateFeedback();
     delta_x_.setZero();
   }
@@ -433,7 +435,7 @@ namespace lio_ekf
       seg.setNormalDistanceWeight(0.1);
       seg.setMethodType(pcl::SAC_RANSAC);
       seg.setMaxIterations(500);
-      seg.setDistanceThreshold(0.2);
+      seg.setDistanceThreshold(0.1);
       seg.setInputCloud(cloud);
       seg.setInputNormals(cloud_normals);
       seg.segment(*inliers, *coefficients);
@@ -453,7 +455,8 @@ namespace lio_ekf
     seg.setModelType(pcl::SACMODEL_CYLINDER);
     seg.setNormalDistanceWeight(0.1);
     seg.setMaxIterations(500);
-    seg.setDistanceThreshold(0.23);
+    seg.setDistanceThreshold(0.13);
+    // seg.setDistanceThreshold(0.23);
     seg.setRadiusLimits(2, 8);
     seg.setInputCloud(cloud);
     seg.setInputNormals(cloud_normals);
@@ -588,7 +591,7 @@ namespace lio_ekf
       KH = S_inv * HTRH;
       stateFeedback();
 
-      if ((delta_x_ - last_dx).norm() < 0.001)
+      if ((delta_x_ - last_dx).norm() < 0.0001)
       {
         break;
       }
@@ -730,14 +733,44 @@ namespace lio_ekf
   std::pair<Vector3dVector, Vector3dVector>
   LIOEKF::Voxelize(const std::vector<Eigen::Vector3d> &frame) const
   {
-
     const auto voxel_size = liopara_.voxel_size;
-    const auto frame_downsample =
-        kiss_icp::VoxelDownsample(frame, voxel_size * 10);
-    const auto source =
-        kiss_icp::VoxelDownsample(frame_downsample, voxel_size * 15); // 1.5
 
-    return {source, frame_downsample};
+    const auto frame_downsample = kiss_icp::VoxelDownsample(frame, voxel_size * 5);
+    std::vector<Eigen::Vector3d> top_part, bottom_part;
+
+    // Compute height threshold for the top third
+    double min_z = std::numeric_limits<double>::max();
+    double max_z = std::numeric_limits<double>::lowest();
+    for (const auto &point : frame)
+    {
+      min_z = std::min(min_z, point.z());
+      max_z = std::max(max_z, point.z());
+    }
+    double threshold = min_z + (max_z - min_z) * (6.0 / 8.0);
+
+    // Split the points
+    for (const auto &point : frame)
+    {
+      if (point.z() > threshold)
+      {
+        top_part.push_back(point);
+      }
+      else
+      {
+        bottom_part.push_back(point);
+      }
+    }
+
+    // Apply different downsampling rates
+    const auto downsampled_top = kiss_icp::VoxelDownsample(top_part, voxel_size * 1);
+    const auto downsampled_bottom = kiss_icp::VoxelDownsample(bottom_part, voxel_size * 10);
+
+    // Combine the results
+    std::vector<Eigen::Vector3d> combined;
+    combined.insert(combined.end(), downsampled_top.begin(), downsampled_top.end());
+    combined.insert(combined.end(), downsampled_bottom.begin(), downsampled_bottom.end());
+
+    return {combined, frame_downsample};
   }
 
   Eigen::Matrix4d LIOEKF::poseTran(const Eigen::Matrix4d pose1,

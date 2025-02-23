@@ -209,7 +209,7 @@ namespace lio_ekf
     icp_debug_publisher_ =
         nh_.advertise<sensor_msgs::PointCloud2>("icp_debug", queue_size_);
 
-    lio_ekf_.setIcpDebug(icp_debug_publisher_);
+    lio_ekf_.setLidarImuExtrinR(lidar_imu_extrin_R);
 
     // Intialize trajectory publisher
     path_msg_.header.frame_id = odom_frame_;
