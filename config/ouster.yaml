@@ -10,7 +10,7 @@ lidar:
     min_range: 0.8
     max_points_per_voxl: 1
     voxel_size: 0.15
-    max_iteration: 10
+    max_iteration: 200
 
 imu:
     # IMU noise parameters
@@ -29,9 +29,9 @@ lio:
     initattstd: [ 0.0, 0.0, 0.0 ]
 
     extrinsic_T: [0.023, 0.000, -0.061]
-    extrinsic_R: [  -0.9656520,  0.0000000, -0.2598390,
-   0.0000000, -1.0000000,  0.0000000,
-  -0.2598390,  0.0000000, 0.9656520 ]
+    extrinsic_R: [ 1,0,0,
+    0,1,0,
+    0,0,1]
     #transform the imu frame to front-right-down (which is used in the code)
     imu_tran_R: [  1,0,0,
     0,-1,0,

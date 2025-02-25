@@ -212,8 +212,8 @@ namespace lio_ekf
         nh_.advertise<sensor_msgs::PointCloud2>("keypoints", queue_size_);
     map_publisher_ =
         nh_.advertise<sensor_msgs::PointCloud2>("local_map", queue_size_);
-    icp_debug_publisher_ =
-        nh_.advertise<sensor_msgs::PointCloud2>("icp_debug", queue_size_);
+    imu_publisher_ =
+        nh_.advertise<sensor_msgs::Imu>("debug_imu", queue_size_);
 
     lio_ekf_.setLidarImuExtrinR(lidar_imu_extrin_R);
 
@@ -225,7 +225,7 @@ namespace lio_ekf
     // added.
 
     signal(SIGINT, SigHandle);
-
+    publishMsgs();
     for (size_t i = 1; i < pcd_files.size(); ++i)
     {
       double t1 = extract_timestamp(pcd_files[i - 1]);
@@ -253,8 +253,10 @@ namespace lio_ekf
           lio_ekf_.lidar_updated_ = false;
           imu_buffer_.clear();
         }
+
         imu_count++;
       }
+      // sleep(3);
     }
   }
 
@@ -429,10 +431,32 @@ namespace lio_ekf
 
   void OdometryServer::imu_to_buffer(lio_ekf::IMU imu_reading)
   {
+    // Create an IMU message
+    sensor_msgs::Imu imu_msg;
+    imu_msg.header.stamp = ros::Time(imu_reading.timestamp);
+    imu_msg.header.frame_id = pointcloud_frame_;
+
+    // Populate angular velocity
+    imu_msg.angular_velocity.x = imu_reading.angular_velocity.x();
+    imu_msg.angular_velocity.y = imu_reading.angular_velocity.y();
+    imu_msg.angular_velocity.z = imu_reading.angular_velocity.z();
+
+    // Populate linear acceleration
+    imu_msg.linear_acceleration.x = imu_reading.linear_acceleration.x();
+    imu_msg.linear_acceleration.y = imu_reading.linear_acceleration.y();
+    imu_msg.linear_acceleration.z = imu_reading.linear_acceleration.z();
+
+    // (Optional) Set covariance matrices if available
+    imu_msg.orientation_covariance[0] = -1; // Indicates orientation is not available
+
+    // Lock the buffer before modifying shared resources
     mtx_buffer_.lock();
     imu_buffer_.push_back(imu_reading);
     last_timestamp_imu_ = imu_reading.timestamp;
+    imu_publisher_.publish(imu_msg); // Publish the IMU message
     mtx_buffer_.unlock();
+
+    // Notify other threads if necessary
     sig_buffer_.notify_all();
   }
 
@@ -623,6 +647,20 @@ namespace lio_ekf
     alias_transform_msg.transform.rotation.z = 0.0;
     alias_transform_msg.transform.rotation.w = 1.0;
     tf_broadcaster_.sendTransform(alias_transform_msg);
+
+    // Frame for imu for debugging
+    // geometry_msgs::TransformStamped lidar_to_imu_transform;
+    // lidar_to_imu_transform.header.stamp = stamp;
+    // lidar_to_imu_transform.header.frame_id = pointcloud_frame_;
+    // lidar_to_imu_transform.child_frame_id = "imu_frame";
+    // lidar_to_imu_transform.transform.translation.x = 0.023;
+    // lidar_to_imu_transform.transform.translation.y = 0.000;
+    // lidar_to_imu_transform.transform.translation.z = -0.061;
+    // lidar_to_imu_transform.transform.rotation.x = -0.131;
+    // lidar_to_imu_transform.transform.rotation.y = 0.0;
+    // lidar_to_imu_transform.transform.rotation.z = 0.991;
+    // lidar_to_imu_transform.transform.rotation.w = 0.0;
+    // tf_broadcaster_.sendTransform(lidar_to_imu_transform);
 
     // publish odometry msg
     nav_msgs::Odometry odom_msg;

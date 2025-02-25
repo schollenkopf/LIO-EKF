@@ -69,7 +69,7 @@ namespace lio_ekf
 
     std::deque<std_msgs::Header> lidar_header_buffer_;
 
-    ros::Publisher icp_debug_publisher_;
+    ros::Publisher imu_publisher_;
 
     std::vector<lio_ekf::IMU> findIMUBetween(std::vector<lio_ekf::IMU> &imu_data, double t1, double t2);
     std::vector<std::string> getSortedPCDFiles(const std::string &pcd_folder);
