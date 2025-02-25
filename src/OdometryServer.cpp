@@ -231,6 +231,7 @@ namespace lio_ekf
       double t1 = extract_timestamp(pcd_files[i - 1]);
       double t2 = extract_timestamp(pcd_files[i]);
       ROS_WARN("Handling pcd_file %zu with timestamp %f", i, t2);
+      ROS_WARN("imu readings left %zu", imu_data.size());
       pcd_file_to_buffer(pcd_files[i]);
 
       lio_ekf_.addLidarData(lidar_buffer_, lidar_time_buffer_, // read in the lidar and clear buffer
@@ -238,9 +239,10 @@ namespace lio_ekf
                             points_per_scan_time_buffer_);
 
       std::vector<lio_ekf::IMU> imu_between = findIMUBetween(imu_data, t1, t2);
+      int imu_count = 0;
       for (const auto &imu : imu_between)
       {
-
+        ROS_WARN("handling imu reading %d with timestamp %f", imu_count, imu.timestamp);
         imu_to_buffer(imu);
         lio_ekf_.addImuData(imu_buffer_, false);
         lio_ekf_.newImuProcess();
@@ -251,6 +253,7 @@ namespace lio_ekf
           lio_ekf_.lidar_updated_ = false;
           imu_buffer_.clear();
         }
+        imu_count++;
       }
     }
   }
@@ -396,6 +399,8 @@ namespace lio_ekf
       // ROS_WARN("angular_velocity.y %f", imu_reading.angular_velocity.y());
       std::getline(ss, field, ',');
       imu_reading.angular_velocity.z() = std::stold(field);
+      imu_reading.angular_velocity = lio_para_.imu_tran_R * imu_reading.angular_velocity;
+
       // ROS_WARN("angular_velocity.z %f", imu_reading.angular_velocity.z());
 
       // Skip covariance fields
@@ -412,7 +417,8 @@ namespace lio_ekf
       std::getline(ss, field, ',');
       imu_reading.linear_acceleration.z() = std::stold(field);
       // ROS_WARN("linear_acceleration.z %f", imu_reading.linear_acceleration.z());
-
+      imu_reading.linear_acceleration =
+          lio_para_.imu_tran_R * imu_reading.linear_acceleration;
       // Store the IMU data
       imu_readings.push_back(imu_reading);
     }
@@ -657,9 +663,9 @@ namespace lio_ekf
     map_publisher_.publish(*std::move(
         kiss_icp_ros::utils::EigenToPointCloud2(tmpmap, local_map_header)));
 
-    rosgraph_msgs::Clock clock_msg;
-    clock_msg.clock = ros::Time(last_timestamp_lidar_);
-    clock_publisher_.publish(clock_msg);
+    // rosgraph_msgs::Clock clock_msg;
+    // clock_msg.clock = ros::Time(last_timestamp_lidar_);
+    // clock_publisher_.publish(clock_msg);
   }
 
 } // namespace lio_ekf

@@ -20,3 +20,4 @@ RUN apt install git -y && git clone https://gitlab.com/libeigen/eigen.git && cma
 
 #docker build . --file LIO-EKF/docker/Dockerfile_base  -t thesis_noetic_base
 #rosrun pcl_ros pointcloud_to_pcd input:="/local_map"
+#rostopic echo -p /ouster/imu > ouster_imu_data.csv

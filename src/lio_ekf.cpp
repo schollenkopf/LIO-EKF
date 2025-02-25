@@ -166,7 +166,6 @@ namespace lio_ekf
     if (lidar_t_ > last_update_t_ + 0.001 || is_first_lidar_)
       lidarUpdateFlag =
           isToUpdate(imupre_.timestamp, imucur_.timestamp, updatetime);
-    ROS_WARN_STREAM("update flag: " << lidarUpdateFlag);
     // determine if we should do  update
 
     switch (lidarUpdateFlag)
@@ -255,8 +254,8 @@ namespace lio_ekf
 
     // debug_<<"statePropagation start"<<std::endl;
     // compensate imu error to 'imucur', 'imupre' has been compensated
-    ROS_WARN_STREAM("imu error gyr " << imuerror_.gyrbias);
-    ROS_WARN_STREAM("imu error acc " << imuerror_.accbias);
+    // ROS_WARN_STREAM("imu error gyr " << imuerror_.gyrbias);
+    // ROS_WARN_STREAM("imu error acc " << imuerror_.accbias);
     imuCompensate(imucur, imuerror_);
 
     // update imustate(mechanization)
@@ -428,28 +427,28 @@ namespace lio_ekf
     ne.compute(*cloud_normals);
 
     // Find planes
-    for (int i = 0; i < 1; i++)
-    {
-      seg.setOptimizeCoefficients(true);
-      seg.setModelType(pcl::SACMODEL_NORMAL_PLANE);
-      seg.setNormalDistanceWeight(0.1);
-      seg.setMethodType(pcl::SAC_RANSAC);
-      seg.setMaxIterations(500);
-      seg.setDistanceThreshold(0.1);
-      seg.setInputCloud(cloud);
-      seg.setInputNormals(cloud_normals);
-      seg.segment(*inliers, *coefficients);
+    // for (int i = 0; i < 1; i++)
+    // {
+    //   seg.setOptimizeCoefficients(true);
+    //   seg.setModelType(pcl::SACMODEL_NORMAL_PLANE);
+    //   seg.setNormalDistanceWeight(0.1);
+    //   seg.setMethodType(pcl::SAC_RANSAC);
+    //   seg.setMaxIterations(500);
+    //   seg.setDistanceThreshold(0.25);
+    //   seg.setInputCloud(cloud);
+    //   seg.setInputNormals(cloud_normals);
+    //   seg.segment(*inliers, *coefficients);
 
-      // Remove the planar inliers, extract the rest
-      extract.setInputCloud(cloud);
-      extract.setIndices(inliers);
-      extract.setNegative(true);
-      extract.filter(*cloud);
-      extract_normals.setNegative(true);
-      extract_normals.setInputCloud(cloud_normals);
-      extract_normals.setIndices(inliers);
-      extract_normals.filter(*cloud_normals);
-    }
+    //   // Remove the planar inliers, extract the rest
+    //   extract.setInputCloud(cloud);
+    //   extract.setIndices(inliers);
+    //   extract.setNegative(true);
+    //   extract.filter(*cloud);
+    //   extract_normals.setNegative(true);
+    //   extract_normals.setInputCloud(cloud_normals);
+    //   extract_normals.setIndices(inliers);
+    //   extract_normals.filter(*cloud_normals);
+    // }
 
     // Find cylinder
     seg.setModelType(pcl::SACMODEL_CYLINDER);
@@ -473,14 +472,14 @@ namespace lio_ekf
     extract_normals.filter(*cloud_normals);
 
     // Clean point cloud
-    pcl::RadiusOutlierRemoval<pcl::PointXYZ> outrem;
-    // build the filter
-    outrem.setInputCloud(cloud);
-    outrem.setRadiusSearch(0.04);
-    outrem.setMinNeighborsInRadius(4);
-    outrem.setKeepOrganized(true);
-    // apply filter
-    outrem.filter(*cloud);
+    // pcl::RadiusOutlierRemoval<pcl::PointXYZ> outrem;
+    // // build the filter
+    // outrem.setInputCloud(cloud);
+    // outrem.setRadiusSearch(0.04);
+    // outrem.setMinNeighborsInRadius(4);
+    // outrem.setKeepOrganized(true);
+    // // apply filter
+    // outrem.filter(*cloud);
 
     // pcl::PointCloud<pcl::PointXYZ>::Ptr source_cloud = convertEigenToPCL(source);
     // *cloud += *source_cloud;
@@ -736,6 +735,7 @@ namespace lio_ekf
     const auto voxel_size = liopara_.voxel_size;
 
     const auto frame_downsample = kiss_icp::VoxelDownsample(frame, voxel_size * 5);
+    const auto source = kiss_icp::VoxelDownsample(frame, voxel_size * 3);
     std::vector<Eigen::Vector3d> top_part, bottom_part;
 
     // Compute height threshold for the top third
@@ -770,7 +770,7 @@ namespace lio_ekf
     combined.insert(combined.end(), downsampled_top.begin(), downsampled_top.end());
     combined.insert(combined.end(), downsampled_bottom.begin(), downsampled_bottom.end());
 
-    return {combined, frame_downsample};
+    return {source, frame_downsample};
   }
 
   Eigen::Matrix4d LIOEKF::poseTran(const Eigen::Matrix4d pose1,
