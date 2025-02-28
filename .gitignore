@@ -1,4 +1,6 @@
 /output
 /dataset
 /dataset2
+/src/datasetFull
+*.pcd
 /imus

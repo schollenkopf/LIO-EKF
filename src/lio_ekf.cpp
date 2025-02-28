@@ -355,52 +355,52 @@ namespace lio_ekf
     return std::make_tuple(source_in_imu_frame, frame_downsample);
   }
 
-  void LIOEKF::laserUpUpdate()
-  {
-    // --- Ceiling Measurement Update Step ---
-    double distance_to_top = laser_up_;
+  // void LIOEKF::laserUpUpdate()
+  // {
+  //   // --- Ceiling Measurement Update Step ---
+  //   double distance_to_top = laser_up_;
 
-    // Compute relative change in laser measurement
-    double relative_change = distance_to_top - last_distance_to_top_;
-    last_distance_to_top_ = distance_to_top;
+  //   // Compute relative change in laser measurement
+  //   double relative_change = distance_to_top - last_distance_to_top_;
+  //   last_distance_to_top_ = distance_to_top;
 
-    // Measurement uncertainty handling
-    double measurement_uncertainty = (std::abs(relative_change) > 0.3) ? 1.0 : 0.01;
-    ROS_WARN("LASER UP Measurement: %f, Relative Change: %f", last_distance_to_top_, relative_change);
+  //   // Measurement uncertainty handling
+  //   double measurement_uncertainty = (std::abs(relative_change) > 0.3) ? 1.0 : 0.01;
+  //   ROS_WARN("LASER UP Measurement: %f, Relative Change: %f", last_distance_to_top_, relative_change);
 
-    // Convert relative change to global frame using inverse of lidar_imu_extrin_R
-    Eigen::Vector3d measurement(0, 0, relative_change);
-    Eigen::Vector3d measurement_global = lidar_imu_extrin_R.inverse() * measurement;
+  //   // Convert relative change to global frame using inverse of lidar_imu_extrin_R
+  //   Eigen::Vector3d measurement(0, 0, relative_change);
+  //   // Eigen::Vector3d measurement_global = lidar_imu_extrin_R.inverse() * measurement;
 
-    // Compute residual using only relative changes
-    Eigen::Vector3d residual = -measurement_global;
+  //   // Compute residual using only relative changes
+  //   Eigen::Vector3d residual = -measurement_global;
 
-    // Jacobian H (affects x, y, and z positions)
-    Eigen::Matrix<double, 3, 15> H;
-    H.setZero();
-    // H(0, 0) = 1.0; // x-position update
-    H(1, 1) = 1.0; // y-position update
-    H(2, 2) = 1.0; // z-position update
+  //   // Jacobian H (affects x, y, and z positions)
+  //   Eigen::Matrix<double, 3, 15> H;
+  //   H.setZero();
+  //   // H(0, 0) = 1.0; // x-position update
+  //   H(1, 1) = 1.0; // y-position update
+  //   H(2, 2) = 1.0; // z-position update
 
-    // Compute Kalman Gain
-    Eigen::Matrix<double, 15, 3> K = Cov_ * H.transpose() * (H * Cov_ * H.transpose() + measurement_uncertainty * Eigen::Matrix3d::Identity()).inverse();
+  //   // Compute Kalman Gain
+  //   Eigen::Matrix<double, 15, 3> K = Cov_ * H.transpose() * (H * Cov_ * H.transpose() + measurement_uncertainty * Eigen::Matrix3d::Identity()).inverse();
 
-    // Apply update
-    delta_x_ += K * residual;
-    ROS_WARN_STREAM("\nError State Vector (delta_x):"
-                    << "\n  Position Error (Δt)     : " << delta_x_.segment<3>(0).transpose()
-                    << "\n  Velocity Error (Δv)     : " << delta_x_.segment<3>(3).transpose()
-                    << "\n  Attitude Error (Δϕ)     : " << delta_x_.segment<3>(6).transpose()
-                    << "\n  Gyroscope Bias (Δb_g)  : " << delta_x_.segment<3>(9).transpose()
-                    << "\n  Accelerometer Bias (Δb_a): " << delta_x_.segment<3>(12).transpose());
+  //   // Apply update
+  //   delta_x_ += K * residual;
+  //   ROS_WARN_STREAM("\nError State Vector (delta_x):"
+  //                   << "\n  Position Error (Δt)     : " << delta_x_.segment<3>(0).transpose()
+  //                   << "\n  Velocity Error (Δv)     : " << delta_x_.segment<3>(3).transpose()
+  //                   << "\n  Attitude Error (Δϕ)     : " << delta_x_.segment<3>(6).transpose()
+  //                   << "\n  Gyroscope Bias (Δb_g)  : " << delta_x_.segment<3>(9).transpose()
+  //                   << "\n  Accelerometer Bias (Δb_a): " << delta_x_.segment<3>(12).transpose());
 
-    // Update covariance matrix
-    Cov_ -= K * H * Cov_;
+  //   // Update covariance matrix
+  //   Cov_ -= K * H * Cov_;
 
-    // Apply state feedback and reset error state
-    stateFeedback();
-    delta_x_.setZero();
-  }
+  //   // Apply state feedback and reset error state
+  //   stateFeedback();
+  //   delta_x_.setZero();
+  // }
 
   Vector3dVector LIOEKF::findLadder(Vector3dVector input_cloud_eigen)
   {
@@ -427,35 +427,35 @@ namespace lio_ekf
     ne.compute(*cloud_normals);
 
     // Find planes
-    // for (int i = 0; i < 1; i++)
-    // {
-    //   seg.setOptimizeCoefficients(true);
-    //   seg.setModelType(pcl::SACMODEL_NORMAL_PLANE);
-    //   seg.setNormalDistanceWeight(0.1);
-    //   seg.setMethodType(pcl::SAC_RANSAC);
-    //   seg.setMaxIterations(500);
-    //   seg.setDistanceThreshold(0.25);
-    //   seg.setInputCloud(cloud);
-    //   seg.setInputNormals(cloud_normals);
-    //   seg.segment(*inliers, *coefficients);
+    for (int i = 0; i < 1; i++)
+    {
+      seg.setOptimizeCoefficients(true);
+      seg.setModelType(pcl::SACMODEL_NORMAL_PLANE);
+      seg.setNormalDistanceWeight(0.1);
+      seg.setMethodType(pcl::SAC_RANSAC);
+      seg.setMaxIterations(500);
+      seg.setDistanceThreshold(0.2);
+      seg.setInputCloud(cloud);
+      seg.setInputNormals(cloud_normals);
+      seg.segment(*inliers, *coefficients);
 
-    //   // Remove the planar inliers, extract the rest
-    //   extract.setInputCloud(cloud);
-    //   extract.setIndices(inliers);
-    //   extract.setNegative(true);
-    //   extract.filter(*cloud);
-    //   extract_normals.setNegative(true);
-    //   extract_normals.setInputCloud(cloud_normals);
-    //   extract_normals.setIndices(inliers);
-    //   extract_normals.filter(*cloud_normals);
-    // }
+      // Remove the planar inliers, extract the rest
+      extract.setInputCloud(cloud);
+      extract.setIndices(inliers);
+      extract.setNegative(true);
+      extract.filter(*cloud);
+      extract_normals.setNegative(true);
+      extract_normals.setInputCloud(cloud_normals);
+      extract_normals.setIndices(inliers);
+      extract_normals.filter(*cloud_normals);
+    }
 
     // Find cylinder
     seg.setModelType(pcl::SACMODEL_CYLINDER);
     seg.setNormalDistanceWeight(0.1);
     seg.setMaxIterations(500);
-    seg.setDistanceThreshold(0.13);
-    // seg.setDistanceThreshold(0.23);
+    // seg.setDistanceThreshold(0.13);
+    seg.setDistanceThreshold(0.27);
     seg.setRadiusLimits(2, 8);
     seg.setInputCloud(cloud);
     seg.setInputNormals(cloud_normals);
@@ -472,7 +472,8 @@ namespace lio_ekf
     extract_normals.filter(*cloud_normals);
 
     // Clean point cloud
-    // pcl::RadiusOutlierRemoval<pcl::PointXYZ> outrem;
+    // pcl::RadiusOutlierRemoval<pcl::PointXYZ>
+    //     outrem;
     // // build the filter
     // outrem.setInputCloud(cloud);
     // outrem.setRadiusSearch(0.04);
@@ -597,8 +598,77 @@ namespace lio_ekf
       last_dx = delta_x_;
       delta_x_.setZero();
     }
+
     ROS_WARN("Exited icp after %d its", j);
     Cov_ -= KH * Cov_;
+    // for (j = 0; j < liopara_.max_iteration; ++j)
+    // {
+    //   Vector3dVector points_w = source;
+
+    //   TransformPoints(cur_pose.matrix(), points_w);
+
+    //   const auto &[src, tgt] =
+    //       lio_map_cylindrical_.GetCorrespondences(points_w, max_correspondence_distance);
+
+    //   // ROS_WARN_STREAM("Number of correspondences found: " << src.size());
+
+    //   auto compute_jacobian_and_residual = [&](auto i)
+    //   {
+    //     const Eigen::Vector3d &source_pt = src[i];
+    //     const Eigen::Vector3d &target_pt = tgt[i];
+    //     ;
+    //     const Eigen::Vector3d residual = (source_pt - target_pt);
+    //     Eigen::Vector3d R_bG_p = source_pt - cur_pose.translation();
+    //     Eigen::Matrix3_15d H = Eigen::Matrix3_15d::Zero();
+    //     H.block<3, 3>(0, 0) = Eigen::Matrix3d::Identity();
+    //     H.block<3, 3>(0, 6) = Sophus::SO3d::hat(R_bG_p);
+    //     return std::make_tuple(H, residual);
+    //   };
+
+    //   const auto [HTRH, HTRz] = tbb::parallel_reduce(
+    //       // Range
+    //       tbb::blocked_range<size_t>{0, src.size()},
+    //       // Identity
+    //       ResultTuple(),
+    //       // 1st Lambda: Parallel computation
+    //       [&](const tbb::blocked_range<size_t> &r, ResultTuple J) -> ResultTuple
+    //       {
+    //         auto &[HTRH_private, HTRz_private] = J;
+    //         for (auto i = r.begin(); i < r.end(); ++i)
+    //         {
+    //           const auto &[H, z] = compute_jacobian_and_residual(i);
+    //           HTRH_private.noalias() += H.transpose() * R_inv * H;
+    //           HTRz_private.noalias() += H.transpose() * R_inv * z;
+    //         }
+    //         return J;
+    //       },
+    //       // 2nd Lambda: Parallel reduction of the private Jacboians
+    //       [&](ResultTuple a, const ResultTuple &b) -> ResultTuple
+    //       {
+    //         return a + b;
+    //       });
+
+    //   Eigen::Matrix15d S_inv = (HTRH + Cov_.inverse()).inverse();
+    //   delta_x_ = S_inv * HTRz;
+    //   // ROS_WARN_STREAM("\nError State Vector (delta_x):"
+    //   //                 << "\n  Position Error (Δt)     : " << delta_x_.segment<3>(0).transpose()
+    //   //                 << "\n  Velocity Error (Δv)     : " << delta_x_.segment<3>(3).transpose()
+    //   //                 << "\n  Attitude Error (Δϕ)     : " << delta_x_.segment<3>(6).transpose()
+    //   //                 << "\n  Gyroscope Bias (Δb_g)  : " << delta_x_.segment<3>(9).transpose()
+    //   //                 << "\n  Accelerometer Bias (Δb_a): " << delta_x_.segment<3>(12).transpose());
+    //   KH = S_inv * HTRH;
+    //   stateFeedback();
+
+    //   if ((delta_x_ - last_dx).norm() < 0.0001)
+    //   {
+    //     break;
+    //   }
+    //   last_dx = delta_x_;
+    //   delta_x_.setZero();
+    // }
+
+    // ROS_WARN("Exited cylindrical icp after %d its", j);
+    // Cov_ -= KH * Cov_;
     // ROS_WARN_STREAM("cov lidar:\n"
     //                 << Cov_);
 
@@ -606,6 +676,7 @@ namespace lio_ekf
         bodystate_cur_.pose * Sophus::SE3d(liopara_.Trans_lidar_imu);
     Imu_Prediction_Covariance_.setZero();
     lio_map_.Update(frame_downsample, pose_in_lidar_frame);
+    // lio_map_cylindrical_.Update(frame_downsample, pose_in_lidar_frame);
     last_update_t_ = lidar_t_;
   }
 
@@ -734,8 +805,6 @@ namespace lio_ekf
   {
     const auto voxel_size = liopara_.voxel_size;
 
-    const auto frame_downsample = kiss_icp::VoxelDownsample(frame, voxel_size * 5);
-    const auto source = kiss_icp::VoxelDownsample(frame, voxel_size * 3);
     std::vector<Eigen::Vector3d> top_part, bottom_part;
 
     // Compute height threshold for the top third
@@ -770,7 +839,10 @@ namespace lio_ekf
     combined.insert(combined.end(), downsampled_top.begin(), downsampled_top.end());
     combined.insert(combined.end(), downsampled_bottom.begin(), downsampled_bottom.end());
 
-    return {source, frame_downsample};
+    const auto frame_downsample = kiss_icp::VoxelDownsample(frame, voxel_size * 6);
+    // const auto source = kiss_icp::VoxelDownsample(frame, voxel_size * 5);
+
+    return {combined, frame_downsample};
   }
 
   Eigen::Matrix4d LIOEKF::poseTran(const Eigen::Matrix4d pose1,

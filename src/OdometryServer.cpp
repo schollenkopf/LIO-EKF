@@ -215,8 +215,6 @@ namespace lio_ekf
     imu_publisher_ =
         nh_.advertise<sensor_msgs::Imu>("debug_imu", queue_size_);
 
-    lio_ekf_.setLidarImuExtrinR(lidar_imu_extrin_R);
-
     // Intialize trajectory publisher
     path_msg_.header.frame_id = odom_frame_;
     traj_publisher_ = nh_.advertise<nav_msgs::Path>("trajectory", queue_size_);
@@ -242,7 +240,7 @@ namespace lio_ekf
       int imu_count = 0;
       for (const auto &imu : imu_between)
       {
-        ROS_WARN("handling imu reading %d with timestamp %f", imu_count, imu.timestamp);
+        // ROS_WARN("handling imu reading %d with timestamp %f", imu_count, imu.timestamp);
         imu_to_buffer(imu);
         lio_ekf_.addImuData(imu_buffer_, false);
         lio_ekf_.newImuProcess();
@@ -608,8 +606,8 @@ namespace lio_ekf
 
     newpose = lio_ekf_.poseTran(newpose, tmp);
     rotM = newpose.block<3, 3>(0, 0);
-    ROS_WARN_STREAM("Pose" << newpose);
-    ROS_WARN_STREAM("vel" << navstate.vel);
+    // ROS_WARN_STREAM("Pose" << newpose);
+    // ROS_WARN_STREAM("vel" << navstate.vel);
     // ROS_WARN_STREAM("imu err" << navstate.imuerror);
     Eigen::Quaterniond q_current = Rotation::matrix2quaternion(rotM);
 
@@ -647,20 +645,6 @@ namespace lio_ekf
     alias_transform_msg.transform.rotation.z = 0.0;
     alias_transform_msg.transform.rotation.w = 1.0;
     tf_broadcaster_.sendTransform(alias_transform_msg);
-
-    // Frame for imu for debugging
-    // geometry_msgs::TransformStamped lidar_to_imu_transform;
-    // lidar_to_imu_transform.header.stamp = stamp;
-    // lidar_to_imu_transform.header.frame_id = pointcloud_frame_;
-    // lidar_to_imu_transform.child_frame_id = "imu_frame";
-    // lidar_to_imu_transform.transform.translation.x = 0.023;
-    // lidar_to_imu_transform.transform.translation.y = 0.000;
-    // lidar_to_imu_transform.transform.translation.z = -0.061;
-    // lidar_to_imu_transform.transform.rotation.x = -0.131;
-    // lidar_to_imu_transform.transform.rotation.y = 0.0;
-    // lidar_to_imu_transform.transform.rotation.z = 0.991;
-    // lidar_to_imu_transform.transform.rotation.w = 0.0;
-    // tf_broadcaster_.sendTransform(lidar_to_imu_transform);
 
     // publish odometry msg
     nav_msgs::Odometry odom_msg;
@@ -701,9 +685,9 @@ namespace lio_ekf
     map_publisher_.publish(*std::move(
         kiss_icp_ros::utils::EigenToPointCloud2(tmpmap, local_map_header)));
 
-    // rosgraph_msgs::Clock clock_msg;
-    // clock_msg.clock = ros::Time(last_timestamp_lidar_);
-    // clock_publisher_.publish(clock_msg);
+    rosgraph_msgs::Clock clock_msg;
+    clock_msg.clock = ros::Time(last_timestamp_lidar_);
+    clock_publisher_.publish(clock_msg);
   }
 
 } // namespace lio_ekf
