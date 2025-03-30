@@ -9,9 +9,9 @@
 
   <param name="outputdir" type="string" value="$(find lio_ekf)/output/ouster/" />
 
-  <param name="pcddir" type="string" value="$(find lio_ekf)/src/datasetFull/" />
+  <param name="pcddir" type="string" value="$(find lio_ekf)/data/scans/" />
 
-  <param name="imudir" type="string" value="$(find lio_ekf)/imus/mavros_imu_data.csv" />
+  <param name="imudir" type="string" value="$(find lio_ekf)/data/imus/mavros_imu_data.csv" />
 
   <!-- Odometry node -->
   <node pkg="lio_ekf" type="lio_ekf_node" name="lio_ekf_node" output="screen"/>

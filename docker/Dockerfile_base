@@ -5,8 +5,8 @@ SHELL ["/bin/bash", "-c"]
 #install dependency
 
 #needed for ouster lib
-RUN apt update && apt install libspdlog-dev -y && apt install gdb -y
-
+RUN apt update && apt install libspdlog-dev -y && apt install gdb -y && apt install python3-pip -y
+RUN pip3 install pandas scipy
 
 RUN sudo apt install ros-noetic-pcl-ros -y && source opt/ros/noetic/setup.bash 
 

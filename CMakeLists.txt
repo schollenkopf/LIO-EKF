@@ -74,3 +74,7 @@ target_link_libraries(lio_ekf_node
                       ${catkin_LIBRARIES} )
 
 install(TARGETS lio_ekf_node RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})
+
+catkin_install_python(PROGRAMS scripts/export_camera_pose.py
+  DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)

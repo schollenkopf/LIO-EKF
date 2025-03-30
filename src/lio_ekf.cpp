@@ -527,12 +527,7 @@ namespace lio_ekf
     const auto &cur_pose = bodystate_cur_.pose;
 
     Eigen::Matrix15d KH;
-    // ROS_WARN_STREAM("Points in map: " << lio_map_.map_.size());
 
-    // Vector3dVector debug_cloud = source;
-    // TransformPoints(cur_pose.matrix(), debug_cloud);
-    // icp_debug_publisher_.publish(*std::move(kiss_icp_ros::utils::EigenToPointCloud2(
-    //     debug_cloud, lidar_header_)));
     for (j = 0; j < liopara_.max_iteration; ++j)
     {
       Vector3dVector points_w = source;
@@ -541,8 +536,6 @@ namespace lio_ekf
 
       const auto &[src, tgt] =
           lio_map_.GetCorrespondences(points_w, max_correspondence_distance);
-
-      // ROS_WARN_STREAM("Number of correspondences found: " << src.size());
 
       auto compute_jacobian_and_residual = [&](auto i)
       {
@@ -582,12 +575,6 @@ namespace lio_ekf
 
       Eigen::Matrix15d S_inv = (HTRH + Cov_.inverse()).inverse();
       delta_x_ = S_inv * HTRz;
-      // ROS_WARN_STREAM("\nError State Vector (delta_x):"
-      //                 << "\n  Position Error (Δt)     : " << delta_x_.segment<3>(0).transpose()
-      //                 << "\n  Velocity Error (Δv)     : " << delta_x_.segment<3>(3).transpose()
-      //                 << "\n  Attitude Error (Δϕ)     : " << delta_x_.segment<3>(6).transpose()
-      //                 << "\n  Gyroscope Bias (Δb_g)  : " << delta_x_.segment<3>(9).transpose()
-      //                 << "\n  Accelerometer Bias (Δb_a): " << delta_x_.segment<3>(12).transpose());
       KH = S_inv * HTRH;
       stateFeedback();
 
@@ -601,77 +588,6 @@ namespace lio_ekf
 
     ROS_WARN("Exited icp after %d its", j);
     Cov_ -= KH * Cov_;
-    // for (j = 0; j < liopara_.max_iteration; ++j)
-    // {
-    //   Vector3dVector points_w = source;
-
-    //   TransformPoints(cur_pose.matrix(), points_w);
-
-    //   const auto &[src, tgt] =
-    //       lio_map_cylindrical_.GetCorrespondences(points_w, max_correspondence_distance);
-
-    //   // ROS_WARN_STREAM("Number of correspondences found: " << src.size());
-
-    //   auto compute_jacobian_and_residual = [&](auto i)
-    //   {
-    //     const Eigen::Vector3d &source_pt = src[i];
-    //     const Eigen::Vector3d &target_pt = tgt[i];
-    //     ;
-    //     const Eigen::Vector3d residual = (source_pt - target_pt);
-    //     Eigen::Vector3d R_bG_p = source_pt - cur_pose.translation();
-    //     Eigen::Matrix3_15d H = Eigen::Matrix3_15d::Zero();
-    //     H.block<3, 3>(0, 0) = Eigen::Matrix3d::Identity();
-    //     H.block<3, 3>(0, 6) = Sophus::SO3d::hat(R_bG_p);
-    //     return std::make_tuple(H, residual);
-    //   };
-
-    //   const auto [HTRH, HTRz] = tbb::parallel_reduce(
-    //       // Range
-    //       tbb::blocked_range<size_t>{0, src.size()},
-    //       // Identity
-    //       ResultTuple(),
-    //       // 1st Lambda: Parallel computation
-    //       [&](const tbb::blocked_range<size_t> &r, ResultTuple J) -> ResultTuple
-    //       {
-    //         auto &[HTRH_private, HTRz_private] = J;
-    //         for (auto i = r.begin(); i < r.end(); ++i)
-    //         {
-    //           const auto &[H, z] = compute_jacobian_and_residual(i);
-    //           HTRH_private.noalias() += H.transpose() * R_inv * H;
-    //           HTRz_private.noalias() += H.transpose() * R_inv * z;
-    //         }
-    //         return J;
-    //       },
-    //       // 2nd Lambda: Parallel reduction of the private Jacboians
-    //       [&](ResultTuple a, const ResultTuple &b) -> ResultTuple
-    //       {
-    //         return a + b;
-    //       });
-
-    //   Eigen::Matrix15d S_inv = (HTRH + Cov_.inverse()).inverse();
-    //   delta_x_ = S_inv * HTRz;
-    //   // ROS_WARN_STREAM("\nError State Vector (delta_x):"
-    //   //                 << "\n  Position Error (Δt)     : " << delta_x_.segment<3>(0).transpose()
-    //   //                 << "\n  Velocity Error (Δv)     : " << delta_x_.segment<3>(3).transpose()
-    //   //                 << "\n  Attitude Error (Δϕ)     : " << delta_x_.segment<3>(6).transpose()
-    //   //                 << "\n  Gyroscope Bias (Δb_g)  : " << delta_x_.segment<3>(9).transpose()
-    //   //                 << "\n  Accelerometer Bias (Δb_a): " << delta_x_.segment<3>(12).transpose());
-    //   KH = S_inv * HTRH;
-    //   stateFeedback();
-
-    //   if ((delta_x_ - last_dx).norm() < 0.0001)
-    //   {
-    //     break;
-    //   }
-    //   last_dx = delta_x_;
-    //   delta_x_.setZero();
-    // }
-
-    // ROS_WARN("Exited cylindrical icp after %d its", j);
-    // Cov_ -= KH * Cov_;
-    // ROS_WARN_STREAM("cov lidar:\n"
-    //                 << Cov_);
-
     Sophus::SE3d pose_in_lidar_frame =
         bodystate_cur_.pose * Sophus::SE3d(liopara_.Trans_lidar_imu);
     Imu_Prediction_Covariance_.setZero();

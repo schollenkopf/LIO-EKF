@@ -1,6 +1,6 @@
 /output
-/dataset
-/dataset2
-/src/datasetFull
 *.pcd
-/imus
+/data
+*.csv
+/.vscode/
+.DS_Store
