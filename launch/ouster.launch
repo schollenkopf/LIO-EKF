@@ -7,11 +7,11 @@
   <arg name="visualize" default="true"/>
   <!-- <arg name="bagfile" default="/mnt/data/m2dgr/street_01.bag"/> -->
 
-  <param name="outputdir" type="string" value="$(find lio_ekf)/output/ouster/" />
+  <param name="outputdir" type="string" value="$(find lio_ekf)/output/ouster/esbjerg/" />
 
-  <param name="pcddir" type="string" value="$(find lio_ekf)/data/scans/" />
+  <param name="pcddir" type="string" value="$(find lio_ekf)/data/esbjerg/scans/" />
 
-  <param name="imudir" type="string" value="$(find lio_ekf)/data/imus/mavros_imu_data.csv" />
+  <param name="imudir" type="string" value="$(find lio_ekf)/data/esbjerg/imus/mavros_imu_data.csv" />
 
   <!-- Odometry node -->
   <node pkg="lio_ekf" type="lio_ekf_node" name="lio_ekf_node" output="screen"/>

@@ -8,9 +8,7 @@ from scipy.spatial.transform import Rotation as R
 from rosgraph_msgs.msg import Clock  # Import the correct message type
 
 # File path to world -> base_link poses
-base_link_poses_file = (
-    "../output/ouster/odo_tum_first6.txt"  # seems to output in frame front,left,up
-)
+base_link_poses_file = "../output/ableviation/lio_ekf_parameters_tuned/odo_tum.txt"  # seems to output in frame front,left,up
 
 # Load world -> base_link poses
 df_base_link = pd.read_csv(
@@ -142,7 +140,7 @@ def compute_camera_pose():
             "cqw",
         ],
     )
-    csv_filename = "world_camera_poses_first6_2.csv"
+    csv_filename = "world_camera_poses.csv"
     df_camera.to_csv(csv_filename, index=False)
     rospy.loginfo(f"Camera poses saved to {csv_filename}")
 
@@ -154,5 +152,6 @@ if __name__ == "__main__":
     compute_camera_pose()
 
 # apt install python3-pip
+# pip3 install pandas scipy
 # src/LIO_EKF/scripts:
 # rosrun lio_ekf export_camera_pose.py

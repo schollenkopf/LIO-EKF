@@ -333,11 +333,11 @@ namespace lio_ekf
     Sophus::SE3d lidar_to_imu = Sophus::SE3d(liopara_.Trans_lidar_imu);
     Sophus::SE3d previous_pose_scan = bodystate_pre_.pose * lidar_to_imu;
     Sophus::SE3d current_pose_scan = bodystate_cur_.pose * lidar_to_imu;
-    auto ladder = findLadder(curpoints_);
     curpoints_w_ = kiss_icp::DeSkewScan(curpoints_, timestamps_per_points_,
                                         previous_pose_scan, current_pose_scan);
+    auto ladder = findLadder(curpoints_);
     auto cropped_frame = kiss_icp::Preprocess(
-        curpoints_w_, liopara_.max_range, liopara_.min_range);
+        curpoints_, liopara_.max_range, liopara_.min_range);
     auto [source, frame_downsample] = Voxelize(cropped_frame);
     source.insert(source.end(), ladder.begin(), ladder.end());
     frame_downsample.insert(frame_downsample.end(), ladder.begin(), ladder.end());
@@ -433,7 +433,7 @@ namespace lio_ekf
       seg.setModelType(pcl::SACMODEL_NORMAL_PLANE);
       seg.setNormalDistanceWeight(0.1);
       seg.setMethodType(pcl::SAC_RANSAC);
-      seg.setMaxIterations(500);
+      seg.setMaxIterations(100);
       seg.setDistanceThreshold(0.2);
       seg.setInputCloud(cloud);
       seg.setInputNormals(cloud_normals);
@@ -453,7 +453,7 @@ namespace lio_ekf
     // Find cylinder
     seg.setModelType(pcl::SACMODEL_CYLINDER);
     seg.setNormalDistanceWeight(0.1);
-    seg.setMaxIterations(500);
+    seg.setMaxIterations(100);
     // seg.setDistanceThreshold(0.13);
     seg.setDistanceThreshold(0.27);
     seg.setRadiusLimits(2, 8);
@@ -747,8 +747,8 @@ namespace lio_ekf
     }
 
     // Apply different downsampling rates
-    const auto downsampled_top = kiss_icp::VoxelDownsample(top_part, voxel_size * 1);
-    const auto downsampled_bottom = kiss_icp::VoxelDownsample(bottom_part, voxel_size * 10);
+    const auto downsampled_top = kiss_icp::VoxelDownsample(top_part, voxel_size * 5);
+    const auto downsampled_bottom = kiss_icp::VoxelDownsample(bottom_part, voxel_size * 5);
 
     // Combine the results
     std::vector<Eigen::Vector3d> combined;
