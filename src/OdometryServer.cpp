@@ -28,7 +28,7 @@
 #include <Eigen/Core>
 #include <condition_variable>
 #include <csignal>
-#include <filesystem>
+
 #include <sys/stat.h>
 #include <vector>
 
@@ -43,6 +43,7 @@
 #include <sensor_msgs/Range.h>
 #include <tf/transform_broadcaster.h>
 #include <tf2_ros/static_transform_broadcaster.h>
+#include <rosgraph_msgs/Clock.h>
 
 std::condition_variable sig_buffer_;
 
@@ -76,6 +77,8 @@ namespace lio_ekf
     nh_.param<std::string>("common/laser_up_topic", laser_up_topic, "");
 
     nh_.getParam("outputdir", outputdir);
+    nh_.getParam("pcddir", pcddir);
+    nh_.getParam("imudir", imudir);
 
     // imu
     std::vector<double> arw, vrw, gyrbias_std, accbias_std;
@@ -191,14 +194,17 @@ namespace lio_ekf
     odomRes_tum_ << "# timestamp_s tx ty tz qx qy qz qw" << std::endl;
     odomRes_tum_.setf(std::ios::fixed, std::ios::floatfield);
 
+    std::vector<lio_ekf::IMU> imu_data = loadIMUData(imudir);
+    std::vector<std::string> pcd_files = getSortedPCDFiles(pcddir);
     // Intializee subscribers
-    pointcloud_sub_ = nh_.subscribe<sensor_msgs::PointCloud2>(
-        lid_topic, 1000, &OdometryServer::lidar_cbk, this);
-    imu_sub_ = nh_.subscribe<sensor_msgs::Imu>(imu_topic, 10000,
-                                               &OdometryServer::imu_cbk, this);
-    laser_up_sub_ = nh_.subscribe<sensor_msgs::Range>(laser_up_topic, 1000, &OdometryServer::laser_up_cbk, this);
+    // pointcloud_sub_ = nh_.subscribe<sensor_msgs::PointCloud2>(
+    //     lid_topic, 1000, &OdometryServer::lidar_cbk, this);
+    // imu_sub_ = nh_.subscribe<sensor_msgs::Imu>(imu_topic, 10000,
+    //                                            &OdometryServer::imu_cbk, this);
+    // laser_up_sub_ = nh_.subscribe<sensor_msgs::Range>(laser_up_topic, 1000, &OdometryServer::laser_up_cbk, this);
 
     // Intialize publishers
+    clock_publisher_ = nh_.advertise<rosgraph_msgs::Clock>("clock", queue_size_);
     odom_publisher_ = nh_.advertise<nav_msgs::Odometry>("odometry", queue_size_);
     frame_publisher_ =
         nh_.advertise<sensor_msgs::PointCloud2>("frame", queue_size_);
@@ -206,10 +212,8 @@ namespace lio_ekf
         nh_.advertise<sensor_msgs::PointCloud2>("keypoints", queue_size_);
     map_publisher_ =
         nh_.advertise<sensor_msgs::PointCloud2>("local_map", queue_size_);
-    icp_debug_publisher_ =
-        nh_.advertise<sensor_msgs::PointCloud2>("icp_debug", queue_size_);
-
-    lio_ekf_.setLidarImuExtrinR(lidar_imu_extrin_R);
+    imu_publisher_ =
+        nh_.advertise<sensor_msgs::Imu>("debug_imu", queue_size_);
 
     // Intialize trajectory publisher
     path_msg_.header.frame_id = odom_frame_;
@@ -219,98 +223,239 @@ namespace lio_ekf
     // added.
 
     signal(SIGINT, SigHandle);
-
-    bool faultyFirstLidarSkipped = false; // Likely an ouster replay artifacts but messes up first icp alignment and then breaks everything
-
-    ros::Rate rate(1000);
-    bool status = ros::ok();
-
-    while (status)
+    publishMsgs();
+    for (size_t i = 1; i < pcd_files.size(); ++i)
     {
-      ros::spinOnce();
-      if (!faultyFirstLidarSkipped)
+      double t1 = extract_timestamp(pcd_files[i - 1]);
+      double t2 = extract_timestamp(pcd_files[i]);
+      ROS_WARN("Handling pcd_file %zu with timestamp %f", i, t2);
+      ROS_WARN("imu readings left %zu", imu_data.size());
+      pcd_file_to_buffer(pcd_files[i]);
+
+      lio_ekf_.addLidarData(lidar_buffer_, lidar_time_buffer_, // read in the lidar and clear buffer
+                            lidar_header_buffer_,
+                            points_per_scan_time_buffer_);
+
+      std::vector<lio_ekf::IMU> imu_between = findIMUBetween(imu_data, t1, t2);
+      int imu_count = 0;
+      for (const auto &imu : imu_between)
       {
-        if (!lidar_buffer_.empty())
+        // ROS_WARN("handling imu reading %d with timestamp %f", imu_count, imu.timestamp);
+        imu_to_buffer(imu);
+        lio_ekf_.addImuData(imu_buffer_, false);
+        lio_ekf_.newImuProcess();
+        if (lio_ekf_.lidar_updated_)
         {
-          lidar_buffer_.clear();
-          laser_up_buffer_.clear();
+          writeResults(odomRes_);
+          publishMsgs();
+          lio_ekf_.lidar_updated_ = false;
           imu_buffer_.clear();
-          lidar_header_buffer_.clear();
-          lidar_time_buffer_.clear();
-          laser_up_time_buffer_.clear();
-          points_per_scan_time_buffer_.clear();
-          faultyFirstLidarSkipped = true;
         }
+
+        imu_count++;
       }
-      else if (!data_synced_)
+      // sleep(3);
+    }
+  }
+
+  std::vector<lio_ekf::IMU> OdometryServer::findIMUBetween(std::vector<lio_ekf::IMU> &imu_data, double t1, double t2)
+  {
+
+    std::vector<lio_ekf::IMU> result;
+    auto it = imu_data.begin();
+
+    while (it != imu_data.end())
+    {
+      // If the timestamp is within the specified range
+      if (it->timestamp > t1 && it->timestamp < t2)
       {
-        if (!imu_buffer_.empty() && !lidar_buffer_.empty() && !laser_up_buffer_.empty())
-        {
-          if (!laser_up_buffer_.empty())
-          {
-            lio_ekf_.addLaserUpData(laser_up_buffer_, laser_up_time_buffer_);
-          }
-          if (!imu_buffer_.empty())
-          {
-
-            lio_ekf_.addImuData(imu_buffer_, false);
-          }
-          if (!lidar_buffer_.empty())
-          {
-
-            if (lio_ekf_.getLiDARtimestamp() < lio_ekf_.getImutimestamp())
-            {
-
-              lio_ekf_.addLidarData(lidar_buffer_, lidar_time_buffer_,
-                                    lidar_header_buffer_,
-                                    points_per_scan_time_buffer_);
-            }
-          }
-
-          if (lio_ekf_.getLiDARtimestamp() >= lio_ekf_.getImutimestamp())
-          {
-            data_synced_ = true;
-          }
-        }
+        result.push_back(*it);
+        it = imu_data.erase(it); // Remove the element from imu_data and advance the iterator
+      }
+      else if (it->timestamp >= t2)
+      {
+        result.push_back(*it);
+        imu_data.erase(it); // Remove the element and break the loop
+        break;
       }
       else
       {
-        if (!laser_up_buffer_.empty())
-        {
-          lio_ekf_.addLaserUpData(laser_up_buffer_, laser_up_time_buffer_);
-        }
-
-        if (lidar_buffer_.empty())
-          if (imu_buffer_.empty())
-          {
-            continue;
-          }
-
-        if (lio_ekf_.getLiDARtimestamp() < lio_ekf_.getImutimestamp() && // if last lidar is older than last imu
-            !lidar_buffer_.empty())
-        {
-
-          lio_ekf_.addLidarData(lidar_buffer_, lidar_time_buffer_, // read in the lidar and clear buffer
-                                lidar_header_buffer_,
-                                points_per_scan_time_buffer_);
-        }
-
-        if (!imu_buffer_.empty() &&
-            !lidar_buffer_.empty()) // if both imu and lidar buffer contain data
-        {
-          lio_ekf_.addImuData(imu_buffer_, false); // update with new imu data upto the received but not read in lidar
-          lio_ekf_.newImuProcess();
-          if (lio_ekf_.lidar_updated_)
-          {
-            writeResults(odomRes_);
-            publishMsgs();
-            lio_ekf_.lidar_updated_ = false;
-          }
-        }
+        ++it; // Only advance the iterator if no removal was made
       }
-      status = ros::ok();
-      rate.sleep();
     }
+    return result;
+  }
+
+  std::vector<std::string> OdometryServer::getSortedPCDFiles(const std::string &pcd_folder)
+  {
+    ROS_WARN("Load PCD File Timestamps");
+    std::vector<std::string> pcd_files;
+
+    for (const auto &entry : std::filesystem::directory_iterator(pcd_folder))
+    {
+      if (entry.path().extension() == ".pcd")
+      {
+        pcd_files.push_back(entry.path().string());
+      }
+    }
+
+    // Sort files by extracted timestamp
+    std::sort(pcd_files.begin(), pcd_files.end(), [](const std::string &a, const std::string &b)
+              { return std::stold(std::filesystem::path(a).stem().string()) < std::stold(std::filesystem::path(b).stem().string()); });
+    ROS_WARN("Loaded %zu PCD File Timestamps", pcd_files.size());
+    return pcd_files;
+  }
+
+  double OdometryServer::extract_timestamp(std::string filename)
+  {
+    return std::stold(std::filesystem::path(filename).stem().string()) / 1e6;
+  }
+
+  void OdometryServer::pcd_file_to_buffer(const std::string &pcd_filename)
+  {
+
+    double timestamp = extract_timestamp(pcd_filename);
+
+    // Load PCD file
+    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>());
+    if (pcl::io::loadPCDFile<pcl::PointXYZ>(pcd_filename, *cloud) == -1)
+    {
+      ROS_ERROR_STREAM("Failed to load PCD file: " << pcd_filename);
+      return;
+    }
+
+    // Check for loopback
+    if (timestamp < last_timestamp_lidar_)
+    {
+      ROS_ERROR("Lidar loop back detected, clearing buffer");
+      lidar_buffer_.clear();
+      lidar_time_buffer_.clear();
+      lidar_header_buffer_.clear();
+    }
+
+    mtx_buffer_.lock();
+
+    // Convert PCL cloud to Eigen format
+    std::vector<Eigen::Vector3d> points; // Define the vector
+    points.reserve(cloud->size());       // Reserve memory for efficiency
+
+    for (const auto &pt : cloud->points)
+    {
+      points.emplace_back(pt.x, pt.y, pt.z);
+    }
+
+    // Eigen::MatrixXf points = kiss_icp_ros::utils::PointCloud2ToEigen(*cloud);
+
+    // Add data to buffers
+    lidar_buffer_.push_back(points);
+    lidar_time_buffer_.push_back(timestamp);
+    std_msgs::Header header;
+
+    header.stamp = ros::Time(timestamp);
+    // header.frame_id = '/ouster_frame';
+    lidar_header_buffer_.push_back(header);
+
+    last_timestamp_lidar_ = timestamp;
+
+    mtx_buffer_.unlock();
+    sig_buffer_.notify_all();
+  }
+
+  std::vector<lio_ekf::IMU> OdometryServer::loadIMUData(const std::string &imu_csv_path)
+  {
+    ROS_WARN("Loading IMU data");
+    std::ifstream file(imu_csv_path);
+
+    std::vector<lio_ekf::IMU> imu_readings;
+    std::string line;
+    std::getline(file, line); // Skip the header
+
+    double last_timestamp = -1;
+    while (std::getline(file, line))
+    {
+      std::stringstream ss(line);
+      std::string field;
+      lio_ekf::IMU imu_reading;
+
+      // Extract timestamp
+      std::getline(ss, field, ',');
+      imu_reading.timestamp = std::stold(field) / 1e9; // Convert to double
+
+      // Compute dt (time difference from last IMU reading)
+      imu_reading.dt = imu_reading.timestamp - last_timestamp_imu_;
+      // ROS_WARN("dt %f", imu_reading.dt);
+      last_timestamp_imu_ = imu_reading.timestamp;
+
+      // Skip unnecessary fields to get to angular velocity
+      for (int i = 0; i < 16; ++i)
+        std::getline(ss, field, ',');
+
+      // Read angular velocity (x, y, z)
+      std::getline(ss, field, ',');
+      imu_reading.angular_velocity.x() = std::stold(field);
+      // ROS_WARN("angular_velocity.x %f", imu_reading.angular_velocity.x());
+      std::getline(ss, field, ',');
+      imu_reading.angular_velocity.y() = std::stold(field);
+      // ROS_WARN("angular_velocity.y %f", imu_reading.angular_velocity.y());
+      std::getline(ss, field, ',');
+      imu_reading.angular_velocity.z() = std::stold(field);
+      imu_reading.angular_velocity = lio_para_.imu_tran_R * imu_reading.angular_velocity;
+
+      // ROS_WARN("angular_velocity.z %f", imu_reading.angular_velocity.z());
+
+      // Skip covariance fields
+      for (int i = 0; i < 9; ++i)
+        std::getline(ss, field, ',');
+
+      // Read linear acceleration (x, y, z)
+      std::getline(ss, field, ',');
+      imu_reading.linear_acceleration.x() = std::stold(field);
+      // ROS_WARN("linear_acceleration.x %f", imu_reading.linear_acceleration.x());
+      std::getline(ss, field, ',');
+      imu_reading.linear_acceleration.y() = std::stold(field);
+      // ROS_WARN("linear_acceleration.y %f", imu_reading.linear_acceleration.y());
+      std::getline(ss, field, ',');
+      imu_reading.linear_acceleration.z() = std::stold(field);
+      // ROS_WARN("linear_acceleration.z %f", imu_reading.linear_acceleration.z());
+      imu_reading.linear_acceleration =
+          lio_para_.imu_tran_R * imu_reading.linear_acceleration;
+      // Store the IMU data
+      imu_readings.push_back(imu_reading);
+    }
+    ROS_WARN("Loaded IMU data");
+    file.close();
+    return imu_readings;
+  }
+
+  void OdometryServer::imu_to_buffer(lio_ekf::IMU imu_reading)
+  {
+    // Create an IMU message
+    sensor_msgs::Imu imu_msg;
+    imu_msg.header.stamp = ros::Time(imu_reading.timestamp);
+    imu_msg.header.frame_id = pointcloud_frame_;
+
+    // Populate angular velocity
+    imu_msg.angular_velocity.x = imu_reading.angular_velocity.x();
+    imu_msg.angular_velocity.y = imu_reading.angular_velocity.y();
+    imu_msg.angular_velocity.z = imu_reading.angular_velocity.z();
+
+    // Populate linear acceleration
+    imu_msg.linear_acceleration.x = imu_reading.linear_acceleration.x();
+    imu_msg.linear_acceleration.y = imu_reading.linear_acceleration.y();
+    imu_msg.linear_acceleration.z = imu_reading.linear_acceleration.z();
+
+    // (Optional) Set covariance matrices if available
+    imu_msg.orientation_covariance[0] = -1; // Indicates orientation is not available
+
+    // Lock the buffer before modifying shared resources
+    mtx_buffer_.lock();
+    imu_buffer_.push_back(imu_reading);
+    last_timestamp_imu_ = imu_reading.timestamp;
+    imu_publisher_.publish(imu_msg); // Publish the IMU message
+    mtx_buffer_.unlock();
+
+    // Notify other threads if necessary
+    sig_buffer_.notify_all();
   }
 
   void OdometryServer::imu_cbk(const sensor_msgs::Imu::ConstPtr &msg_in)
@@ -461,8 +606,8 @@ namespace lio_ekf
 
     newpose = lio_ekf_.poseTran(newpose, tmp);
     rotM = newpose.block<3, 3>(0, 0);
-    ROS_WARN_STREAM("Pose" << newpose);
-    ROS_WARN_STREAM("vel" << navstate.vel);
+    // ROS_WARN_STREAM("Pose" << newpose);
+    // ROS_WARN_STREAM("vel" << navstate.vel);
     // ROS_WARN_STREAM("imu err" << navstate.imuerror);
     Eigen::Quaterniond q_current = Rotation::matrix2quaternion(rotM);
 
@@ -539,6 +684,10 @@ namespace lio_ekf
     lio_ekf_.TransformPoints(tmp, tmpmap);
     map_publisher_.publish(*std::move(
         kiss_icp_ros::utils::EigenToPointCloud2(tmpmap, local_map_header)));
+
+    rosgraph_msgs::Clock clock_msg;
+    clock_msg.clock = ros::Time(last_timestamp_lidar_);
+    clock_publisher_.publish(clock_msg);
   }
 
 } // namespace lio_ekf

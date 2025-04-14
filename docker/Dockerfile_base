@@ -5,13 +5,15 @@ SHELL ["/bin/bash", "-c"]
 #install dependency
 
 #needed for ouster lib
-RUN apt update && apt install libspdlog-dev -y && apt install gdb -y
-
+RUN apt update && apt install libspdlog-dev -y && apt install gdb -y && apt install python3-pip -y
+RUN pip3 install pandas scipy
 
 RUN sudo apt install ros-noetic-pcl-ros -y && source opt/ros/noetic/setup.bash 
 
 
 COPY ../data/a107ac6c-305a-4208-a5a4-b4ef41c68c60/ros-bag/ /ros_bag/
+COPY ../data/flight-esbjerg/ros_bag /ros_bag/esbjerg/
+COPY ../data/flight-grena/ros_bag /ros_bag/flight-grena/
 
 # Create Colcon workspace
 RUN mkdir -p /catkin_ws/src
@@ -20,3 +22,4 @@ RUN apt install git -y && git clone https://gitlab.com/libeigen/eigen.git && cma
 
 #docker build . --file LIO-EKF/docker/Dockerfile_base  -t thesis_noetic_base
 #rosrun pcl_ros pointcloud_to_pcd input:="/local_map"
+#rostopic echo -p /ouster/imu > ouster_imu_data.csv

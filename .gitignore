@@ -1,1 +1,6 @@
 /output
+*.pcd
+/data
+*.csv
+/.vscode/
+.DS_Store

@@ -39,7 +39,7 @@ namespace lio_ekf
     Eigen::Vector3d imucur_dvel, imucur_dtheta, imupre_dvel, imupre_dtheta;
     imucur_dvel = imucur.linear_acceleration * imucur.dt;
     imucur_dtheta = imucur.angular_velocity * imucur.dt;
-    ROS_WARN_STREAM("lin acc: " << imucur_dvel);
+    // ROS_WARN_STREAM("lin acc: " << imucur_dvel);
     imupre_dvel = imupre.linear_acceleration * imupre.dt;
     imupre_dtheta = imupre.angular_velocity * imupre.dt;
     // rotational and sculling motion
@@ -52,7 +52,7 @@ namespace lio_ekf
 
     // velocity increment dut to the specfic force projected to the n-frame
     d_vfn = pvapre.pose.rotationMatrix() * d_vfb;
-    ROS_WARN_STREAM("d_vfn " << d_vfn.transpose());
+    // ROS_WARN_STREAM("d_vfn " << d_vfn.transpose());
 
     // velocity increment due to the gravity and Coriolis force
     gl << 0, 0, NormG;

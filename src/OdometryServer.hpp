@@ -38,6 +38,17 @@
 #include "lio_ekf.hpp"
 #include "lio_types.hpp"
 
+#include <iostream>
+#include <vector>
+#include <string>
+#include <fstream>
+#include <sstream>
+#include <algorithm>
+#include <filesystem>
+#include <pcl/io/pcd_io.h>
+#include <pcl/point_types.h>
+#include <Eigen/Dense>
+
 namespace lio_ekf
 {
 
@@ -58,7 +69,15 @@ namespace lio_ekf
 
     std::deque<std_msgs::Header> lidar_header_buffer_;
 
-    ros::Publisher icp_debug_publisher_;
+    ros::Publisher imu_publisher_;
+
+    std::vector<lio_ekf::IMU> findIMUBetween(std::vector<lio_ekf::IMU> &imu_data, double t1, double t2);
+    std::vector<std::string> getSortedPCDFiles(const std::string &pcd_folder);
+    void pcd_file_to_buffer(const std::string &pcd_filename);
+    std::vector<lio_ekf::IMU> loadIMUData(const std::string &imu_csv_path);
+    void imu_to_buffer(lio_ekf::IMU imu_reading);
+
+    double extract_timestamp(std::string filename);
 
   private:
     lio_ekf::LIOPara lio_para_; // parameters for lidar-inertial fusion
@@ -68,6 +87,9 @@ namespace lio_ekf
 
     // output dir
     std::string outputdir;
+    std::string pcddir;
+    std::string imudir;
+
     std::ofstream odomRes_, odomRes_tum_;
 
     /// Ros node stuff
@@ -102,6 +124,7 @@ namespace lio_ekf
     ros::Publisher frame_publisher_;
     ros::Publisher kpoints_publisher_;
     ros::Publisher map_publisher_;
+    ros::Publisher clock_publisher_;
 
     /// Global/map coordinate frame.
     std::string odom_frame_{"odom_lio"};

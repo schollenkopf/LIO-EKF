@@ -184,11 +184,6 @@ namespace lio_ekf
         const Eigen::Vector3d &point, const double &timestamp,
         const std::vector<std::pair<double, Sophus::SE3d>> &posesWithinScan);
 
-    void setLidarImuExtrinR(Eigen::Matrix3d r)
-    {
-      lidar_imu_extrin_R = r;
-    }
-
   private:
     void navStateInitialization(const NavState &initstate,
                                 const NavState &initstate_std);
@@ -236,8 +231,6 @@ namespace lio_ekf
     void initFirstLiDAR(const int lidarUpdateFlag);
 
     void resetCov(Eigen::Matrix15d &Cov);
-
-    Eigen::Matrix3d lidar_imu_extrin_R;
 
   private:
     LIOPara liopara_;
