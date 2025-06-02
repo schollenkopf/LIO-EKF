@@ -4,19 +4,25 @@ import os
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
-# Path to the input video and CSV file
-video_path = "../../data/a107ac6c-305a-4208-a5a4-b4ef41c68c60/video/standalone_session_a107ac6c-305a-4208-a5a4-b4ef41c68c60.mp4"
-csv_path = "./world_camera_poses_first6_2.csv"
+# OG flight:
+# video_path = "../../data/a107ac6c-305a-4208-a5a4-b4ef41c68c60/video/standalone_session_a107ac6c-305a-4208-a5a4-b4ef41c68c60.mp4"
+# csv_path = "./world_camera_poses_first6_2.csv"
+# out_folder = "first6"
+# video_start_time = 1717332837.74 - 4.16  # based on first big up motion in slam output
 
-out_folder = "first6"
+# Esbjerg
+video_path = "../../data/flight-esbjerg/standalone_session_1889b63b-12f0-4678-afe9-1fdc43675ce7.mp4"
+csv_path = "./world_camera_poses_esbjerg.csv"
+out_folder = "scenes_colmap/esbjerg"
+video_start_time = 1741440389.22 - 4.500003  # esbjerg based on json file
+
 
 output_image_dir = "../output/" + out_folder + "/images"
 points3D_path = "../output/" + out_folder + "/sparse/0/points3D.txt"
 output_txt_path = "../output/" + out_folder + "/sparse/0/images.txt"
 output_plot_path = "../output/" + out_folder + "/camera_poses_plot.png"
 
-# Time offset for video start
-video_start_time = 1717332837.74 - 4.16  # based on first big up motion in slam output
+
 # Create the output directory if it doesn't exist
 os.makedirs(output_image_dir, exist_ok=True)
 
@@ -45,16 +51,26 @@ ax.set_zlim([-10, 0])
 camera_id = 1
 # Define arrow scale
 arrow_length = 0.4  # Adjust based on your scene size
-
+last_frametime = 0
+max_fps = 0.5
+frame_count = 0
 with open(output_txt_path, "w") as txt_file:
     for index, row in data.iterrows():
+        if index < 164:  # skip static initial pos for esbjerg
+            continue
         # if index % 10 != 0:
         #     continue
         # if index != 14 and (index > 1 and index < 70 or index % 4 != 0):
         #     continue
-        print(index)
+
         timestamp = row["timestamp"]
         frame_time = timestamp - video_start_time
+
+        if not frame_time - last_frametime > (1 / max_fps):
+            continue
+        frame_count += 1
+        print(frame_count)
+        last_frametime = frame_time
         print(frame_time)
         frame_index = int(frame_time * fps)
 

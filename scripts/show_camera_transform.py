@@ -4,9 +4,13 @@ import os
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
-out_folder = "first6_calibrated_cleaned3/"
+out_folder = ""
 csv_path = "world_camera_poses_first6_2.csv"
-points3D_path = "../output/scenes_colmap/" + out_folder + "sparse/0/points3D.txt"
+points3D_path = (
+    "../output/scenes_colmap/2_first6_calibrated_cleaned/"
+    + out_folder
+    + "sparse/0/points3D.txt"
+)
 
 
 # print(fps)
@@ -38,7 +42,7 @@ poses = [
 data = pd.read_csv(csv_path)
 count = 0
 for index, row in data.iterrows():
-    if index % 10 != 0:
+    if index % 20 != 0:
         continue
     # if index != 14 and (index > 1 and index < 70 or index % 4 != 0):
     #     continue
@@ -147,9 +151,10 @@ for index, row in data.iterrows():
 
 point_cloud = []
 if os.path.exists(points3D_path):
+    print("get pcd")
     with open(points3D_path, "r") as f:
         for i, line in enumerate(f):
-            if line.startswith("#") or not line.strip() or i % 10 != 0:
+            if line.startswith("#") or not line.strip() or i % 50 != 0:
                 continue
             parts = line.split()
             x, y, z = map(float, parts[1:4])  # Extract X, Y, Z

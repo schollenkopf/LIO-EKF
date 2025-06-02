@@ -73,8 +73,10 @@ namespace lio_ekf
 
     std::vector<lio_ekf::IMU> findIMUBetween(std::vector<lio_ekf::IMU> &imu_data, double t1, double t2);
     std::vector<std::string> getSortedPCDFiles(const std::string &pcd_folder);
-    void pcd_file_to_buffer(const std::string &pcd_filename);
+    float getClosestRangeAndClean(double timestamp, std::vector<std::pair<double, float>> &laser_up_data);
+    void cloud_to_buffer(const std::string &pcd_filename);
     std::vector<lio_ekf::IMU> loadIMUData(const std::string &imu_csv_path);
+    std::vector<std::pair<double, float>> loadLaserUp(const std::string &laserupdir);
     void imu_to_buffer(lio_ekf::IMU imu_reading);
 
     double extract_timestamp(std::string filename);
@@ -89,6 +91,7 @@ namespace lio_ekf
     std::string outputdir;
     std::string pcddir;
     std::string imudir;
+    std::string laserupdir;
 
     std::ofstream odomRes_, odomRes_tum_;
 

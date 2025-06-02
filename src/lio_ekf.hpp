@@ -33,9 +33,10 @@
 
 #include "imuPropagation.hpp"
 #include "kiss_icp/core/Threshold.hpp"
-#include "kiss_icp/core/VoxelHashMap.hpp"
+// #include "kiss_icp/core/VoxelHashMap.hpp"
 #include "kiss_icp/pipeline/KissICP.hpp"
 #include "lio_types.hpp"
+#include "CustomVoxelHashMap.hpp"
 
 #include <pcl/io/pcd_io.h>
 #include <pcl/point_types.h>
@@ -92,13 +93,14 @@ namespace lio_ekf
     addLidarData(std::deque<std::vector<Eigen::Vector3d>> &lidar_buffer_,
                  std::deque<double> &lidar_time_buffer_,
                  std::deque<std_msgs::Header> &lidar_header_buffer_,
-                 std::deque<std::vector<double>> &points_per_scan_time_buffer_)
+                 std::deque<std::vector<double>> &points_per_scan_time_buffer_, float laser_up)
     {
       const std::vector<Eigen::Vector3d> &points = lidar_buffer_.front();
       double timestamp = lidar_time_buffer_.front();
 
       lidar_header_ = lidar_header_buffer_.front();
       curpoints_ = points;
+      curlaserup_ = laser_up;
 
       lidar_t_ = timestamp;
       if (!points_per_scan_time_buffer_.empty())
@@ -143,6 +145,7 @@ namespace lio_ekf
     inline double getLiDARtimestamp() const { return lidar_t_; }
 
     NavState getNavState();
+    NavState getPredState();
 
     inline Eigen::MatrixXd getCovariance() { return Cov_; }
 
@@ -193,7 +196,7 @@ namespace lio_ekf
     void statePropagation(IMU &imupre, IMU &imucur);
 
     auto processScan();
-    auto processScanLadder();
+    auto processLaserUp();
     void laserUpUpdate();
     void lidarUpdate();
     void lidarLadderUpdate();
@@ -253,6 +256,7 @@ namespace lio_ekf
 
     // imu state (position, velocity, attitude and imu error)
     BodyState bodystate_cur_;
+    BodyState bodystate_pred_;
     BodyState bodystate_pre_;
 
     ImuError imuerror_;
@@ -281,10 +285,10 @@ namespace lio_ekf
       ACC_BIAS_STD_ID = 9
     };
 
-    kiss_icp::VoxelHashMap lio_map_;
+    kiss_icp::CustomVoxelHashMap lio_map_;
 
     Vector3dVector curpoints_, curpoints_w_, keypoints_w_;
-
+    float curlaserup_;
     std::vector<double>
         timestamps_per_points_; // Timestamps for each points in one frame
 

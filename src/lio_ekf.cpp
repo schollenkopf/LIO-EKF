@@ -310,22 +310,17 @@ namespace lio_ekf
     ekfPredict(State_Transition_Mat, Process_Noise_Cov);
   }
 
-  auto LIOEKF::processScanLadder()
+  auto LIOEKF::processLaserUp()
   {
-    Sophus::SE3d lidar_to_imu = Sophus::SE3d(liopara_.Trans_lidar_imu);
-    Sophus::SE3d previous_pose_scan = bodystate_pre_.pose * lidar_to_imu;
-    Sophus::SE3d current_pose_scan = bodystate_cur_.pose * lidar_to_imu;
-    auto deskewed = kiss_icp::DeSkewScan(curpoints_, timestamps_per_points_,
-                                         previous_pose_scan, current_pose_scan);
-    auto cropped_frame = kiss_icp::Preprocess(
-        deskewed, liopara_.max_range, liopara_.min_range);
-    auto ladderScan = findLadder(cropped_frame);
-    curpoints_w_ = deskewed;
-    const Eigen::Matrix4d &lidar_to_imu_origin = liopara_.Trans_lidar_imu_origin;
-    TransformPoints(lidar_to_imu_origin, curpoints_w_);
-    auto ladderScanImuFrame = ladderScan;
-    TransformPoints(lidar_to_imu.matrix(), ladderScanImuFrame);
-    return std::make_tuple(ladderScanImuFrame, ladderScan);
+    Eigen::Matrix3d R;
+    R << 0.2580377, 0.0, -0.9661348,
+        0.0, 1.0, 0.0,
+        0.9661348, 0.0, 0.2580377;
+
+    Eigen::Vector3d t(-0.028, -0.132, -0.042);
+    Eigen::Vector3d laser_vector_local(curlaserup_, 0, 0);
+    Eigen::Vector3d laser_point_global = R * laser_vector_local + t;
+    return laser_point_global;
   }
 
   auto LIOEKF::processScan()
@@ -333,14 +328,42 @@ namespace lio_ekf
     Sophus::SE3d lidar_to_imu = Sophus::SE3d(liopara_.Trans_lidar_imu);
     Sophus::SE3d previous_pose_scan = bodystate_pre_.pose * lidar_to_imu;
     Sophus::SE3d current_pose_scan = bodystate_cur_.pose * lidar_to_imu;
+
     curpoints_w_ = kiss_icp::DeSkewScan(curpoints_, timestamps_per_points_,
                                         previous_pose_scan, current_pose_scan);
-    auto ladder = findLadder(curpoints_);
-    auto cropped_frame = kiss_icp::Preprocess(
-        curpoints_, liopara_.max_range, liopara_.min_range);
+
+    auto cropped_frame = kiss_icp::Preprocess(curpoints_, liopara_.max_range, liopara_.min_range);
+    auto ladder = findLadder(cropped_frame);
     auto [source, frame_downsample] = Voxelize(cropped_frame);
-    source.insert(source.end(), ladder.begin(), ladder.end());
-    frame_downsample.insert(frame_downsample.end(), ladder.begin(), ladder.end());
+
+    auto laser_point_global = processLaserUp();
+
+    std::size_t source_original_size = source.size();
+    std::size_t ladder_size = ladder.size();
+
+    int ladder_repeat = 0;
+    if (ladder_size > 0)
+    {
+      double desired_ratio = 0.6;
+      ladder_repeat = static_cast<int>(
+          std::round((desired_ratio * source_original_size) / ((1 - desired_ratio) * ladder_size)));
+      source.insert(source.end(), ladder.begin(), ladder.end());
+
+      frame_downsample.insert(frame_downsample.end(), ladder.begin(), ladder.end());
+    }
+
+    for (int i = 0; i < ladder_repeat - 1; ++i)
+    {
+      source.insert(source.end(), ladder.begin(), ladder.end());
+    }
+
+    // for (int i = 0; i < 0.02 * source.size(); ++i)
+    // {
+    //   source.push_back(laser_point_global);
+    // }
+
+    // frame_downsample.push_back(laser_point_global);
+
     auto source_in_imu_frame = source;
 
     keypoints_w_ = source_in_imu_frame;
@@ -350,57 +373,8 @@ namespace lio_ekf
     TransformPoints(lidar_to_imu_origin, keypoints_w_);
     TransformPoints(lidar_to_imu_origin, curpoints_w_);
 
-    // curpoints_w_ = findLadder(curpoints_w_);
-
     return std::make_tuple(source_in_imu_frame, frame_downsample);
   }
-
-  // void LIOEKF::laserUpUpdate()
-  // {
-  //   // --- Ceiling Measurement Update Step ---
-  //   double distance_to_top = laser_up_;
-
-  //   // Compute relative change in laser measurement
-  //   double relative_change = distance_to_top - last_distance_to_top_;
-  //   last_distance_to_top_ = distance_to_top;
-
-  //   // Measurement uncertainty handling
-  //   double measurement_uncertainty = (std::abs(relative_change) > 0.3) ? 1.0 : 0.01;
-  //   ROS_WARN("LASER UP Measurement: %f, Relative Change: %f", last_distance_to_top_, relative_change);
-
-  //   // Convert relative change to global frame using inverse of lidar_imu_extrin_R
-  //   Eigen::Vector3d measurement(0, 0, relative_change);
-  //   // Eigen::Vector3d measurement_global = lidar_imu_extrin_R.inverse() * measurement;
-
-  //   // Compute residual using only relative changes
-  //   Eigen::Vector3d residual = -measurement_global;
-
-  //   // Jacobian H (affects x, y, and z positions)
-  //   Eigen::Matrix<double, 3, 15> H;
-  //   H.setZero();
-  //   // H(0, 0) = 1.0; // x-position update
-  //   H(1, 1) = 1.0; // y-position update
-  //   H(2, 2) = 1.0; // z-position update
-
-  //   // Compute Kalman Gain
-  //   Eigen::Matrix<double, 15, 3> K = Cov_ * H.transpose() * (H * Cov_ * H.transpose() + measurement_uncertainty * Eigen::Matrix3d::Identity()).inverse();
-
-  //   // Apply update
-  //   delta_x_ += K * residual;
-  //   ROS_WARN_STREAM("\nError State Vector (delta_x):"
-  //                   << "\n  Position Error (Δt)     : " << delta_x_.segment<3>(0).transpose()
-  //                   << "\n  Velocity Error (Δv)     : " << delta_x_.segment<3>(3).transpose()
-  //                   << "\n  Attitude Error (Δϕ)     : " << delta_x_.segment<3>(6).transpose()
-  //                   << "\n  Gyroscope Bias (Δb_g)  : " << delta_x_.segment<3>(9).transpose()
-  //                   << "\n  Accelerometer Bias (Δb_a): " << delta_x_.segment<3>(12).transpose());
-
-  //   // Update covariance matrix
-  //   Cov_ -= K * H * Cov_;
-
-  //   // Apply state feedback and reset error state
-  //   stateFeedback();
-  //   delta_x_.setZero();
-  // }
 
   Vector3dVector LIOEKF::findLadder(Vector3dVector input_cloud_eigen)
   {
@@ -426,37 +400,13 @@ namespace lio_ekf
     ne.setKSearch(20);
     ne.compute(*cloud_normals);
 
-    // Find planes
-    for (int i = 0; i < 1; i++)
-    {
-      seg.setOptimizeCoefficients(true);
-      seg.setModelType(pcl::SACMODEL_NORMAL_PLANE);
-      seg.setNormalDistanceWeight(0.1);
-      seg.setMethodType(pcl::SAC_RANSAC);
-      seg.setMaxIterations(100);
-      seg.setDistanceThreshold(0.2);
-      seg.setInputCloud(cloud);
-      seg.setInputNormals(cloud_normals);
-      seg.segment(*inliers, *coefficients);
-
-      // Remove the planar inliers, extract the rest
-      extract.setInputCloud(cloud);
-      extract.setIndices(inliers);
-      extract.setNegative(true);
-      extract.filter(*cloud);
-      extract_normals.setNegative(true);
-      extract_normals.setInputCloud(cloud_normals);
-      extract_normals.setIndices(inliers);
-      extract_normals.filter(*cloud_normals);
-    }
-
     // Find cylinder
     seg.setModelType(pcl::SACMODEL_CYLINDER);
-    seg.setNormalDistanceWeight(0.1);
-    seg.setMaxIterations(100);
+    seg.setNormalDistanceWeight(0);
+    seg.setMaxIterations(1500);
     // seg.setDistanceThreshold(0.13);
-    seg.setDistanceThreshold(0.27);
-    seg.setRadiusLimits(2, 8);
+    seg.setDistanceThreshold(0.4);
+    seg.setRadiusLimits(1.5, 3);
     seg.setInputCloud(cloud);
     seg.setInputNormals(cloud_normals);
     seg.segment(*inliers, *coefficients);
@@ -471,19 +421,27 @@ namespace lio_ekf
     extract_normals.setIndices(inliers);
     extract_normals.filter(*cloud_normals);
 
-    // Clean point cloud
-    // pcl::RadiusOutlierRemoval<pcl::PointXYZ>
-    //     outrem;
-    // // build the filter
-    // outrem.setInputCloud(cloud);
-    // outrem.setRadiusSearch(0.04);
-    // outrem.setMinNeighborsInRadius(4);
-    // outrem.setKeepOrganized(true);
-    // // apply filter
-    // outrem.filter(*cloud);
+    // Find cylinder 2 esbjerg
+    seg.setModelType(pcl::SACMODEL_CYLINDER);
+    seg.setNormalDistanceWeight(0);
+    seg.setMaxIterations(1500);
+    // seg.setDistanceThreshold(0.13);
+    seg.setDistanceThreshold(0.4);
+    seg.setRadiusLimits(0.05, 0.4);
+    seg.setInputCloud(cloud);
+    seg.setInputNormals(cloud_normals);
+    seg.segment(*inliers, *coefficients);
 
-    // pcl::PointCloud<pcl::PointXYZ>::Ptr source_cloud = convertEigenToPCL(source);
-    // *cloud += *source_cloud;
+    // Remove the cylinder inliers
+    extract.setInputCloud(cloud);
+    extract.setIndices(inliers);
+    extract.setNegative(true);
+    extract.filter(*cloud);
+    extract_normals.setNegative(true);
+    extract_normals.setInputCloud(cloud_normals);
+    extract_normals.setIndices(inliers);
+    extract_normals.filter(*cloud_normals);
+
     Vector3dVector filtered_eigen_cloud = convertPCLToEigen(cloud);
 
     return filtered_eigen_cloud;
@@ -509,6 +467,7 @@ namespace lio_ekf
     const auto relative_pose =
         bodystate_pre_.pose.inverse() * bodystate_cur_.pose;
     const auto initial_guess = bodystate_cur_.pose;
+    bodystate_pred_ = bodystate_cur_;
     auto square = [](const double &x)
     { return x * x; };
     double uncertanty_motion =
@@ -518,7 +477,7 @@ namespace lio_ekf
     double range_uncertanty = square(0.05);
     // double max_correspondence_distance = 1.0;
     double max_correspondence_distance =
-        6 * std::sqrt(uncertanty_motion + map_uncertanty + range_uncertanty + laser_up_change_);
+        6 * std::sqrt(uncertanty_motion + map_uncertanty + range_uncertanty);
 
     Eigen::Vector15d last_dx = Eigen::Vector15d::Zero();
     double weight = 1000;
@@ -533,7 +492,6 @@ namespace lio_ekf
       Vector3dVector points_w = source;
 
       TransformPoints(cur_pose.matrix(), points_w);
-
       const auto &[src, tgt] =
           lio_map_.GetCorrespondences(points_w, max_correspondence_distance);
 
@@ -578,7 +536,7 @@ namespace lio_ekf
       KH = S_inv * HTRH;
       stateFeedback();
 
-      if ((delta_x_ - last_dx).norm() < 0.0001)
+      if ((delta_x_ - last_dx).norm() < 0.000005)
       {
         break;
       }
@@ -716,6 +674,16 @@ namespace lio_ekf
     return state;
   }
 
+  NavState LIOEKF::getPredState()
+  {
+    NavState state;
+    state.pos = bodystate_pred_.pose.translation();
+    state.vel = bodystate_pred_.vel;
+    state.euler = Rotation::matrix2euler(bodystate_cur_.pose.rotationMatrix());
+    state.imuerror = imuerror_;
+    return state;
+  }
+
   std::pair<Vector3dVector, Vector3dVector>
   LIOEKF::Voxelize(const std::vector<Eigen::Vector3d> &frame) const
   {
@@ -731,7 +699,7 @@ namespace lio_ekf
       min_z = std::min(min_z, point.z());
       max_z = std::max(max_z, point.z());
     }
-    double threshold = min_z + (max_z - min_z) * (6.0 / 8.0);
+    double threshold = min_z + (max_z - min_z) * (4 / 8.0);
 
     // Split the points
     for (const auto &point : frame)
@@ -740,22 +708,18 @@ namespace lio_ekf
       {
         top_part.push_back(point);
       }
-      else
-      {
-        bottom_part.push_back(point);
-      }
     }
 
     // Apply different downsampling rates
-    const auto downsampled_top = kiss_icp::VoxelDownsample(top_part, voxel_size * 5);
-    const auto downsampled_bottom = kiss_icp::VoxelDownsample(bottom_part, voxel_size * 5);
+    const auto downsampled_top = kiss_icp::VoxelDownsample(top_part, voxel_size * 1.5);
+    // const auto downsampled_bottom = kiss_icp::VoxelDownsample(bottom_part, voxel_size * 10);
 
     // Combine the results
     std::vector<Eigen::Vector3d> combined;
     combined.insert(combined.end(), downsampled_top.begin(), downsampled_top.end());
-    combined.insert(combined.end(), downsampled_bottom.begin(), downsampled_bottom.end());
+    // combined.insert(combined.end(), downsampled_bottom.begin(), downsampled_bottom.end());
 
-    const auto frame_downsample = kiss_icp::VoxelDownsample(frame, voxel_size * 6);
+    const auto frame_downsample = kiss_icp::VoxelDownsample(frame, voxel_size * 2);
     // const auto source = kiss_icp::VoxelDownsample(frame, voxel_size * 5);
 
     return {combined, frame_downsample};

@@ -79,6 +79,7 @@ namespace lio_ekf
     nh_.getParam("outputdir", outputdir);
     nh_.getParam("pcddir", pcddir);
     nh_.getParam("imudir", imudir);
+    nh_.getParam("laserupdir", laserupdir);
 
     // imu
     std::vector<double> arw, vrw, gyrbias_std, accbias_std;
@@ -194,6 +195,7 @@ namespace lio_ekf
     odomRes_tum_ << "# timestamp_s tx ty tz qx qy qz qw" << std::endl;
     odomRes_tum_.setf(std::ios::fixed, std::ios::floatfield);
 
+    std::vector<std::pair<double, float>> laser_up_data = loadLaserUp(laserupdir);
     std::vector<lio_ekf::IMU> imu_data = loadIMUData(imudir);
     std::vector<std::string> pcd_files = getSortedPCDFiles(pcddir);
     // Intializee subscribers
@@ -230,11 +232,12 @@ namespace lio_ekf
       double t2 = extract_timestamp(pcd_files[i]);
       ROS_WARN("Handling pcd_file %zu with timestamp %f", i, t2);
       ROS_WARN("imu readings left %zu", imu_data.size());
-      pcd_file_to_buffer(pcd_files[i]);
+      float range = getClosestRangeAndClean(t2, laser_up_data);
+      cloud_to_buffer(pcd_files[i]);
 
-      lio_ekf_.addLidarData(lidar_buffer_, lidar_time_buffer_, // read in the lidar and clear buffer
+      lio_ekf_.addLidarData(lidar_buffer_, lidar_time_buffer_,
                             lidar_header_buffer_,
-                            points_per_scan_time_buffer_);
+                            points_per_scan_time_buffer_, range);
 
       std::vector<lio_ekf::IMU> imu_between = findIMUBetween(imu_data, t1, t2);
       int imu_count = 0;
@@ -256,6 +259,22 @@ namespace lio_ekf
       }
       // sleep(3);
     }
+  }
+
+  float OdometryServer::getClosestRangeAndClean(double timestamp, std::vector<std::pair<double, float>> &laser_up_data)
+  {
+
+    auto it = laser_up_data.begin();
+    while (it != laser_up_data.end())
+    {
+      if (it->first >= timestamp)
+      {
+        it = laser_up_data.erase(it);
+        return it->second;
+      }
+      laser_up_data.erase(it);
+    }
+    return -100.0f;
   }
 
   std::vector<lio_ekf::IMU> OdometryServer::findIMUBetween(std::vector<lio_ekf::IMU> &imu_data, double t1, double t2)
@@ -311,7 +330,7 @@ namespace lio_ekf
     return std::stold(std::filesystem::path(filename).stem().string()) / 1e6;
   }
 
-  void OdometryServer::pcd_file_to_buffer(const std::string &pcd_filename)
+  void OdometryServer::cloud_to_buffer(const std::string &pcd_filename)
   {
 
     double timestamp = extract_timestamp(pcd_filename);
@@ -336,29 +355,68 @@ namespace lio_ekf
     mtx_buffer_.lock();
 
     // Convert PCL cloud to Eigen format
-    std::vector<Eigen::Vector3d> points; // Define the vector
-    points.reserve(cloud->size());       // Reserve memory for efficiency
+    std::vector<Eigen::Vector3d> points;
+    points.reserve(cloud->size());
 
     for (const auto &pt : cloud->points)
     {
       points.emplace_back(pt.x, pt.y, pt.z);
     }
-
-    // Eigen::MatrixXf points = kiss_icp_ros::utils::PointCloud2ToEigen(*cloud);
-
     // Add data to buffers
     lidar_buffer_.push_back(points);
     lidar_time_buffer_.push_back(timestamp);
-    std_msgs::Header header;
 
+    std_msgs::Header header;
     header.stamp = ros::Time(timestamp);
-    // header.frame_id = '/ouster_frame';
+    // header.frame_id = "/ouster_frame";
     lidar_header_buffer_.push_back(header);
 
     last_timestamp_lidar_ = timestamp;
 
     mtx_buffer_.unlock();
     sig_buffer_.notify_all();
+  }
+
+  std::vector<std::pair<double, float>> OdometryServer::loadLaserUp(const std::string &laser_up_csv_path)
+  {
+    std::vector<std::pair<double, float>> laser_data;
+    std::ifstream file(laser_up_csv_path);
+    if (!file.is_open())
+    {
+      std::cerr << "Failed to open file: " << laser_up_csv_path << std::endl;
+      return laser_data;
+    }
+
+    std::string line;
+    bool is_header = true;
+    while (std::getline(file, line))
+    {
+      if (is_header)
+      { // skip the header
+        is_header = false;
+        continue;
+      }
+
+      std::stringstream ss(line);
+      std::string time_str, range_str;
+
+      if (std::getline(ss, time_str, ',') && std::getline(ss, range_str, ','))
+      {
+        try
+        {
+          double timestamp = std::stod(time_str);
+          float range = std::stof(range_str);
+          laser_data.emplace_back(timestamp, range);
+        }
+        catch (const std::exception &e)
+        {
+          std::cerr << "Error parsing line: " << line << " - " << e.what() << std::endl;
+        }
+      }
+    }
+
+    file.close();
+    return laser_data;
   }
 
   std::vector<lio_ekf::IMU> OdometryServer::loadIMUData(const std::string &imu_csv_path)
@@ -684,6 +742,53 @@ namespace lio_ekf
     lio_ekf_.TransformPoints(tmp, tmpmap);
     map_publisher_.publish(*std::move(
         kiss_icp_ros::utils::EigenToPointCloud2(tmpmap, local_map_header)));
+
+    tmp = Eigen::Matrix4d::Identity();
+    tmp.block<3, 3>(0, 0) = lio_para_.imu_tran_R.inverse();
+
+    navstate = lio_ekf_.getPredState();
+
+    rotM = Rotation::euler2matrix(navstate.euler);
+    curpose = Eigen::Matrix4d::Identity();
+
+    curpose.block<3, 3>(0, 0) = rotM;
+    curpose.block<3, 1>(0, 3) = navstate.pos;
+
+    newpose = lio_ekf_.poseTran(tmp, curpose);
+
+    newpose = lio_ekf_.poseTran(newpose, tmp);
+    rotM = newpose.block<3, 3>(0, 0);
+    // ROS_WARN_STREAM("Pose" << newpose);
+    // ROS_WARN_STREAM("vel" << navstate.vel);
+    // ROS_WARN_STREAM("imu err" << navstate.imuerror);
+    q_current = Rotation::matrix2quaternion(rotM);
+
+    t_current = newpose.block<3, 1>(0, 3);
+    // publish odometry msg
+
+    odom_msg.header.stamp = stamp;
+    odom_msg.header.frame_id = odom_frame_;
+    odom_msg.child_frame_id = "prediction";
+    odom_msg.pose.pose.orientation.x = q_current.x();
+    odom_msg.pose.pose.orientation.y = q_current.y();
+    odom_msg.pose.pose.orientation.z = q_current.z();
+    odom_msg.pose.pose.orientation.w = q_current.w();
+    odom_msg.pose.pose.position.x = t_current.x();
+    odom_msg.pose.pose.position.y = t_current.y();
+    odom_msg.pose.pose.position.z = t_current.z();
+    odom_publisher_.publish(odom_msg);
+
+    transform_msg.header.stamp = stamp;
+    transform_msg.header.frame_id = odom_frame_;
+    transform_msg.child_frame_id = "prediction";
+    transform_msg.transform.rotation.x = q_current.x();
+    transform_msg.transform.rotation.y = q_current.y();
+    transform_msg.transform.rotation.z = q_current.z();
+    transform_msg.transform.rotation.w = q_current.w();
+    transform_msg.transform.translation.x = t_current.x();
+    transform_msg.transform.translation.y = t_current.y();
+    transform_msg.transform.translation.z = t_current.z();
+    tf_broadcaster_.sendTransform(transform_msg);
 
     rosgraph_msgs::Clock clock_msg;
     clock_msg.clock = ros::Time(last_timestamp_lidar_);

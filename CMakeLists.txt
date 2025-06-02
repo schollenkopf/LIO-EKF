@@ -64,7 +64,7 @@ add_executable(lio_ekf_node ${CMAKE_CURRENT_SOURCE_DIR}/src/lio_ekf.cpp
                             ${CMAKE_CURRENT_SOURCE_DIR}/src/lio_ekf_node.cpp
                             ${CMAKE_CURRENT_SOURCE_DIR}/src/OdometryServer.cpp 
                             ${CMAKE_CURRENT_SOURCE_DIR}/src/imuPropagation.cpp
-                            ${CMAKE_CURRENT_SOURCE_DIR}/src/CylindricalVoxelHashMap.cpp)
+                            ${CMAKE_CURRENT_SOURCE_DIR}/src/CustomVoxelHashMap.cpp)
 target_include_directories(lio_ekf_node PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src ${catkin_INCLUDE_DIRS})
  
 target_link_libraries(lio_ekf_node 
