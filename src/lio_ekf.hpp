@@ -90,19 +90,31 @@ namespace lio_ekf
     }
 
     inline void
-    addLidarData(std::deque<std::vector<Eigen::Vector3d>> &lidar_buffer_,
+    addLidarData(std::deque<std::vector<std::pair<Eigen::Vector3d, Eigen::Vector3d>>> &lidar_buffer_,
                  std::deque<double> &lidar_time_buffer_,
                  std::deque<std_msgs::Header> &lidar_header_buffer_,
-                 std::deque<std::vector<double>> &points_per_scan_time_buffer_, float laser_up)
+                 std::deque<std::vector<double>> &points_per_scan_time_buffer_,
+                 float laser_up)
     {
-      const std::vector<Eigen::Vector3d> &points = lidar_buffer_.front();
+      const std::vector<std::pair<Eigen::Vector3d, Eigen::Vector3d>> &point_pairs = lidar_buffer_.front();
       double timestamp = lidar_time_buffer_.front();
 
       lidar_header_ = lidar_header_buffer_.front();
-      curpoints_ = points;
+      lidar_t_ = timestamp;
       curlaserup_ = laser_up;
 
-      lidar_t_ = timestamp;
+      // Split the pair into two vectors
+      curpoints_source_.clear();
+      curpoints_map_.clear();
+      curpoints_source_.reserve(point_pairs.size());
+      curpoints_map_.reserve(point_pairs.size());
+
+      for (const auto &pair : point_pairs)
+      {
+        curpoints_source_.push_back(pair.first);
+        curpoints_map_.push_back(pair.second);
+      }
+
       if (!points_per_scan_time_buffer_.empty())
       {
         timestamps_per_points_ = points_per_scan_time_buffer_.front();
@@ -110,7 +122,7 @@ namespace lio_ekf
       }
       else
       {
-        timestamps_per_points_ = std::vector<double>(curpoints_.size(), 0.0);
+        timestamps_per_points_ = std::vector<double>(curpoints_source_.size(), 0.0);
       }
 
       lidar_header_buffer_.pop_front();
@@ -287,7 +299,7 @@ namespace lio_ekf
 
     kiss_icp::CustomVoxelHashMap lio_map_;
 
-    Vector3dVector curpoints_, curpoints_w_, keypoints_w_;
+    Vector3dVector curpoints_, curpoints_w_, keypoints_w_, curpoints_source_, curpoints_map_;
     float curlaserup_;
     std::vector<double>
         timestamps_per_points_; // Timestamps for each points in one frame

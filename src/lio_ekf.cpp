@@ -140,7 +140,7 @@ namespace lio_ekf
     }
     // curpoints_ = findLadder(curpoints_);
     // curpoints_.insert(curpoints_.end(), curpoints_.begin(), curpoints_.end());
-    lio_map_.Update(curpoints_, initLidarpose_w);
+    lio_map_.Update(curpoints_map_, initLidarpose_w);
     is_first_lidar_ = false;
     last_update_t_ = lidar_t_;
     first_lidar_t = lidar_t_;
@@ -329,40 +329,10 @@ namespace lio_ekf
     Sophus::SE3d previous_pose_scan = bodystate_pre_.pose * lidar_to_imu;
     Sophus::SE3d current_pose_scan = bodystate_cur_.pose * lidar_to_imu;
 
-    curpoints_w_ = kiss_icp::DeSkewScan(curpoints_, timestamps_per_points_,
+    curpoints_w_ = kiss_icp::DeSkewScan(curpoints_map_, timestamps_per_points_,
                                         previous_pose_scan, current_pose_scan);
-
-    auto cropped_frame = kiss_icp::Preprocess(curpoints_, liopara_.max_range, liopara_.min_range);
-    auto ladder = findLadder(cropped_frame);
-    auto [source, frame_downsample] = Voxelize(cropped_frame);
-
-    auto laser_point_global = processLaserUp();
-
-    std::size_t source_original_size = source.size();
-    std::size_t ladder_size = ladder.size();
-
-    int ladder_repeat = 0;
-    if (ladder_size > 0)
-    {
-      double desired_ratio = 0.6;
-      ladder_repeat = static_cast<int>(
-          std::round((desired_ratio * source_original_size) / ((1 - desired_ratio) * ladder_size)));
-      source.insert(source.end(), ladder.begin(), ladder.end());
-
-      frame_downsample.insert(frame_downsample.end(), ladder.begin(), ladder.end());
-    }
-
-    for (int i = 0; i < ladder_repeat - 1; ++i)
-    {
-      source.insert(source.end(), ladder.begin(), ladder.end());
-    }
-
-    // for (int i = 0; i < 0.02 * source.size(); ++i)
-    // {
-    //   source.push_back(laser_point_global);
-    // }
-
-    // frame_downsample.push_back(laser_point_global);
+    auto frame_downsample = kiss_icp::Preprocess(curpoints_map_, liopara_.max_range, liopara_.min_range);
+    auto source = kiss_icp::Preprocess(curpoints_source_, liopara_.max_range, liopara_.min_range);
 
     auto source_in_imu_frame = source;
 

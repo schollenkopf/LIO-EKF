@@ -13,11 +13,11 @@ lidar:
     max_iteration: 20
 
 imu:
-   arw: [0.5, 0.5, 0.5]         # deg/sqrt(hr)  → ~0.008 deg/sqrt(s)
-vrw: [10.0, 10.0, 10.0]      # m/s/sqrt(hr)  → ~0.167 m/s/sqrt(s)
-gbstd: [20.0, 20.0, 20.0]    # deg/hr        → ~0.0056 deg/s
-abstd: [100.0, 100.0, 100.0] # mGal          → ~0.001 m/s^2
-corrtime: 1.0                # hr
+    arw: [0.5, 0.5, 0.5]         # deg/sqrt(hr)  → ~0.008 deg/sqrt(s)
+    vrw: [10.0, 10.0, 10.0]      # m/s/sqrt(hr)  → ~0.167 m/s/sqrt(s)
+    gbstd: [20.0, 20.0, 20.0]    # deg/hr        → ~0.0056 deg/s
+    abstd: [100.0, 100.0, 100.0] # mGal          → ~0.001 m/s^2
+    corrtime: 1.0                # hr
 
 lio:
     # initial position std, north, east and down in n-frame. [m, m, m]
@@ -29,12 +29,12 @@ lio:
 
     extrinsic_T: [-0.023, 0.000,-0.023]
     extrinsic_R: [  0.9656520,  0.0000000,  0.2598390,
-   0.0000000,  1.0000000,  0.0000000,
-  -0.2598390,  0.0000000,  0.9656520 ]
+                    0.0000000,  1.0000000,  0.0000000,
+                    -0.2598390,  0.0000000,  0.9656520 ]
     #transform the imu frame to front-right-down (which is used in the code)
     imu_tran_R: [  1,0,0,
-    0,-1,0,
-    0,0,-1 ]
+                0,-1,0,
+                0,0,-1 ]
     # imu_tran_R: [ 0.7071068,0,-0.7071068,
     #           0,-1,0,
     #           -0.7071068,  0,  -0.7071068]

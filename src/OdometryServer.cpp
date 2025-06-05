@@ -60,6 +60,7 @@ namespace lio_ekf
                                  const ros::NodeHandle &pnh)
       : nh_(nh), pnh_(pnh)
   {
+    ROS_WARN("start!");
 
     nh_.param<bool>("lidar/deskew", lio_para_.deskew, false);
     nh_.param<bool>("lidar/preprocess", lio_para_.preprocess, true);
@@ -80,7 +81,7 @@ namespace lio_ekf
     nh_.getParam("pcddir", pcddir);
     nh_.getParam("imudir", imudir);
     nh_.getParam("laserupdir", laserupdir);
-
+    ROS_WARN("1!");
     // imu
     std::vector<double> arw, vrw, gyrbias_std, accbias_std;
 
@@ -104,7 +105,7 @@ namespace lio_ekf
            3 * sizeof(double));
 
     // lio
-
+    ROS_WARN("2!");
     std::vector<double> initposstd, initvelstd, initattstd;
     std::vector<double> extrinsic_T, extrinsic_R, imu_tran_R;
     Eigen::Matrix3d lidar_imu_extrin_R;
@@ -197,7 +198,7 @@ namespace lio_ekf
 
     std::vector<std::pair<double, float>> laser_up_data = loadLaserUp(laserupdir);
     std::vector<lio_ekf::IMU> imu_data = loadIMUData(imudir);
-    std::vector<std::string> pcd_files = getSortedPCDFiles(pcddir);
+    std::vector<std::pair<std::string, std::string>> pcd_files = getSortedPCDFiles(pcddir);
     // Intializee subscribers
     // pointcloud_sub_ = nh_.subscribe<sensor_msgs::PointCloud2>(
     //     lid_topic, 1000, &OdometryServer::lidar_cbk, this);
@@ -228,8 +229,8 @@ namespace lio_ekf
     publishMsgs();
     for (size_t i = 1; i < pcd_files.size(); ++i)
     {
-      double t1 = extract_timestamp(pcd_files[i - 1]);
-      double t2 = extract_timestamp(pcd_files[i]);
+      double t1 = extract_timestamp(pcd_files[i - 1].first);
+      double t2 = extract_timestamp(pcd_files[i].first);
       ROS_WARN("Handling pcd_file %zu with timestamp %f", i, t2);
       ROS_WARN("imu readings left %zu", imu_data.size());
       float range = getClosestRangeAndClean(t2, laser_up_data);
@@ -305,24 +306,60 @@ namespace lio_ekf
     return result;
   }
 
-  std::vector<std::string> OdometryServer::getSortedPCDFiles(const std::string &pcd_folder)
+  std::vector<std::pair<std::string, std::string>> OdometryServer::getSortedPCDFiles(const std::string &pcd_folder)
   {
     ROS_WARN("Load PCD File Timestamps");
-    std::vector<std::string> pcd_files;
+    std::map<std::string, std::pair<std::string, std::string>> file_map;
 
     for (const auto &entry : std::filesystem::directory_iterator(pcd_folder))
     {
       if (entry.path().extension() == ".pcd")
       {
-        pcd_files.push_back(entry.path().string());
+        std::string filename = entry.path().filename().string();
+        std::string stem = entry.path().stem().string(); // e.g., "timestamp_source" or "timestamp_map"
+
+        size_t underscore_pos = stem.rfind('_');
+        if (underscore_pos == std::string::npos)
+          continue;
+
+        std::string timestamp = stem.substr(0, underscore_pos);
+        std::string type = stem.substr(underscore_pos + 1);
+
+        if (type == "source")
+        {
+          file_map[timestamp].first = entry.path().string();
+        }
+        else if (type == "map")
+        {
+          file_map[timestamp].second = entry.path().string();
+        }
       }
     }
 
-    // Sort files by extracted timestamp
-    std::sort(pcd_files.begin(), pcd_files.end(), [](const std::string &a, const std::string &b)
-              { return std::stold(std::filesystem::path(a).stem().string()) < std::stold(std::filesystem::path(b).stem().string()); });
-    ROS_WARN("Loaded %zu PCD File Timestamps", pcd_files.size());
-    return pcd_files;
+    std::vector<std::pair<std::string, std::string>> sorted_files;
+    for (auto &[timestamp, pair] : file_map)
+    {
+      if (!pair.first.empty() && !pair.second.empty())
+      {
+        sorted_files.emplace_back(pair);
+      }
+    }
+
+    // Sort by numeric timestamp
+    std::sort(sorted_files.begin(), sorted_files.end(),
+              [](const auto &a, const auto &b)
+              {
+                std::string timestamp_a = std::filesystem::path(a.first).stem().string();
+                timestamp_a = timestamp_a.substr(0, timestamp_a.rfind('_'));
+
+                std::string timestamp_b = std::filesystem::path(b.first).stem().string();
+                timestamp_b = timestamp_b.substr(0, timestamp_b.rfind('_'));
+
+                return std::stold(timestamp_a) < std::stold(timestamp_b);
+              });
+
+    ROS_WARN("Loaded %zu PCD timestamp pairs", sorted_files.size());
+    return sorted_files;
   }
 
   double OdometryServer::extract_timestamp(std::string filename)
@@ -330,21 +367,30 @@ namespace lio_ekf
     return std::stold(std::filesystem::path(filename).stem().string()) / 1e6;
   }
 
-  void OdometryServer::cloud_to_buffer(const std::string &pcd_filename)
+  void OdometryServer::cloud_to_buffer(const std::pair<std::string, std::string> &pcd_pair)
   {
+    const std::string &source_filename = pcd_pair.first;
+    const std::string &map_filename = pcd_pair.second;
 
-    double timestamp = extract_timestamp(pcd_filename);
+    double timestamp = extract_timestamp(source_filename); // Assumes filenames share timestamp
 
-    // Load PCD file
-    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>());
-    if (pcl::io::loadPCDFile<pcl::PointXYZ>(pcd_filename, *cloud) == -1)
+    // Load source cloud
+    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_source(new pcl::PointCloud<pcl::PointXYZ>());
+    if (pcl::io::loadPCDFile<pcl::PointXYZ>(source_filename, *cloud_source) == -1)
     {
-      ROS_ERROR_STREAM("Failed to load PCD file: " << pcd_filename);
+      ROS_ERROR_STREAM("Failed to load source PCD file: " << source_filename);
       return;
     }
 
-    // Check for loopback
-    if (timestamp < last_timestamp_lidar_)
+    // Load map cloud
+    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_map(new pcl::PointCloud<pcl::PointXYZ>());
+    if (pcl::io::loadPCDFile<pcl::PointXYZ>(map_filename, *cloud_map) == -1)
+    {
+      ROS_ERROR_STREAM("Failed to load map PCD file: " << map_filename);
+      return;
+    }
+
+        if (timestamp < last_timestamp_lidar_)
     {
       ROS_ERROR("Lidar loop back detected, clearing buffer");
       lidar_buffer_.clear();
@@ -354,21 +400,25 @@ namespace lio_ekf
 
     mtx_buffer_.lock();
 
-    // Convert PCL cloud to Eigen format
-    std::vector<Eigen::Vector3d> points;
-    points.reserve(cloud->size());
+    // Combine corresponding points into a vector of pairs
+    std::vector<std::pair<Eigen::Vector3d, Eigen::Vector3d>> point_pairs;
+    point_pairs.reserve(cloud_source->size());
 
-    for (const auto &pt : cloud->points)
+    for (size_t i = 0; i < cloud_source->size(); ++i)
     {
-      points.emplace_back(pt.x, pt.y, pt.z);
+      const auto &src = cloud_source->points[i];
+      const auto &map = cloud_map->points[i];
+      point_pairs.emplace_back(
+          Eigen::Vector3d(src.x, src.y, src.z),
+          Eigen::Vector3d(map.x, map.y, map.z));
     }
-    // Add data to buffers
-    lidar_buffer_.push_back(points);
+
+    // Add to buffer
+    lidar_buffer_.push_back(std::move(point_pairs));
     lidar_time_buffer_.push_back(timestamp);
 
     std_msgs::Header header;
     header.stamp = ros::Time(timestamp);
-    // header.frame_id = "/ouster_frame";
     lidar_header_buffer_.push_back(header);
 
     last_timestamp_lidar_ = timestamp;
@@ -513,99 +563,6 @@ namespace lio_ekf
     mtx_buffer_.unlock();
 
     // Notify other threads if necessary
-    sig_buffer_.notify_all();
-  }
-
-  void OdometryServer::imu_cbk(const sensor_msgs::Imu::ConstPtr &msg_in)
-  {
-
-    sensor_msgs::Imu::Ptr msg(new sensor_msgs::Imu(*msg_in));
-    double timestamp = msg->header.stamp.toSec();
-
-    mtx_buffer_.lock();
-
-    lio_ekf::IMU imu_meas;
-    imu_meas.timestamp = timestamp;
-
-    imu_meas.dt = timestamp - last_timestamp_imu_;
-    // imu_meas.angular_velocity << 0, 0,
-    //     0;
-
-    imu_meas.angular_velocity << msg->angular_velocity.x, msg->angular_velocity.y,
-        msg->angular_velocity.z;
-
-    imu_meas.linear_acceleration << msg->linear_acceleration.x,
-        msg->linear_acceleration.y, msg->linear_acceleration.z;
-
-    // imu_meas.linear_acceleration << 0,
-    //     0, 0;
-
-    imu_meas.angular_velocity = lio_para_.imu_tran_R * imu_meas.angular_velocity;
-    imu_meas.linear_acceleration =
-        lio_para_.imu_tran_R * imu_meas.linear_acceleration;
-
-    imu_buffer_.push_back(imu_meas);
-
-    last_timestamp_imu_ = timestamp;
-
-    mtx_buffer_.unlock();
-    sig_buffer_.notify_all();
-  }
-
-  void OdometryServer::lidar_cbk(const sensor_msgs::PointCloud2ConstPtr &msg)
-  {
-
-    for (auto &field : msg->fields)
-    {
-      if (field.name == "time" || field.name == "t")
-      {
-        break;
-      }
-    }
-
-    if (msg->header.stamp.toSec() < last_timestamp_lidar_)
-    {
-      ROS_ERROR("lidar loop back, clear buffer");
-      lidar_buffer_.clear();
-      lidar_time_buffer_.clear();
-      lidar_header_buffer_.clear();
-    }
-
-    mtx_buffer_.lock();
-
-    // get timestamps for every points
-    const auto &timestamps = [&]() -> std::vector<double>
-    {
-      if (!lio_para_.deskew)
-        return {};
-      return kiss_icp_ros::utils::GetTimestamps(msg);
-    }();
-
-    const auto &points = kiss_icp_ros::utils::PointCloud2ToEigen(msg);
-
-    // deskew points
-
-    lidar_buffer_.push_back(points);
-    lidar_time_buffer_.push_back(msg->header.stamp.toSec());
-    lidar_header_buffer_.push_back(msg->header);
-    if (!timestamps.empty())
-      points_per_scan_time_buffer_.push_back(timestamps);
-    last_timestamp_lidar_ = msg->header.stamp.toSec();
-
-    mtx_buffer_.unlock();
-    sig_buffer_.notify_all();
-  }
-
-  void OdometryServer::laser_up_cbk(const sensor_msgs::RangeConstPtr &msg)
-  {
-    double timestamp = msg->header.stamp.toSec();
-
-    mtx_buffer_.lock();
-
-    laser_up_buffer_.push_back(msg->range);
-    last_timestamp_laser_up_ = timestamp;
-    laser_up_time_buffer_.push_back(timestamp);
-    mtx_buffer_.unlock();
     sig_buffer_.notify_all();
   }
 

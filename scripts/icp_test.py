@@ -7,7 +7,7 @@ import pyransac3d as pyrsc
 import time
 
 
-def pca_downsample(pcd, threshold=0.1, downsample_factor=20):
+def pca_downsample(pcd, threshold=0.1, downsample_factor=20,voxelsize = 0.15):
     pcd.estimate_normals(
         search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=5, max_nn=30)
     )
@@ -35,16 +35,24 @@ def pca_downsample(pcd, threshold=0.1, downsample_factor=20):
         # no need to downsample
         return points
 
-    filtered_points = points
+    source_points = points
 
     for axis in weak_axes.T:
-        projections = filtered_points @ axis
+        projections = source_points @ axis
         low = np.percentile(projections, 25)
         high = np.percentile(projections, 75)
         mask = (projections >= low) & (projections <= high)
-        filtered_points = filtered_points[mask]
+        source_points = source_points[mask]
 
-    return filtered_points[::downsample_factor]
+
+    source_pcd = o3d.geometry.PointCloud()
+    source_pcd.points = o3d.utility.Vector3dVector(source_points)
+    
+    
+    source_pcd = source_pcd.voxel_down_sample(voxel_size=voxelsize*1.5)
+
+    return np.asarray(source_pcd.points)
+
 
 
 def ransac_downsample(pcd2, downsample_factor=20):
@@ -91,6 +99,8 @@ def icp(source, target, method):
         method,
         o3d.pipelines.registration.ICPConvergenceCriteria(max_iteration=2000),
     ).transformation
+    
+    print(T)
     return o3d.geometry.PointCloud(source).transform(T)
 
 
@@ -106,22 +116,31 @@ pcd.remove_non_finite_points()
 pcd2.remove_non_finite_points()
 
 # pcd2_preprocessed = ransac_downsample(pcd2)
+# store_ply(pcd2_preprocessed,"ransac_preprocessed")
 
 c1 = o3d.io.read_point_cloud("icptest/source_mask3d/source_cable1.ply")
 c2 = o3d.io.read_point_cloud("icptest/source_mask3d/source_cable2.ply")
 l = o3d.io.read_point_cloud("icptest/source_mask3d/source_ladder.ply")
 r = o3d.io.read_point_cloud("icptest/source_mask3d/source_cylinder.ply")
 
-# c1 = o3d.io.read_point_cloud("icptest/source_column1.ply")
-# c2 = o3d.io.read_point_cloud("icptest/source_column2.ply")
-# l = o3d.io.read_point_cloud("icptest/source_ladder.ply")
-# r = o3d.io.read_point_cloud("icptest/source_cylinder.ply")
 
 start = time.time()
 c1p = pca_downsample(c1)
+store_ply(o3d.geometry.PointCloud(
+    points=o3d.utility.Vector3dVector(c1p)
+),"segmented_preprocces_c1")
 c2p = pca_downsample(c2)
+store_ply(o3d.geometry.PointCloud(
+    points=o3d.utility.Vector3dVector(c2p)
+),"segmented_preprocces_c2")
 lp = pca_downsample(l)
+store_ply(o3d.geometry.PointCloud(
+    points=o3d.utility.Vector3dVector(lp)
+),"segmented_preprocces_l")
 rp = pca_downsample(r)
+store_ply(o3d.geometry.PointCloud(
+    points=o3d.utility.Vector3dVector(rp)
+),"segmented_preprocces_r")
 print(f"Execution time: {time.time() - start:.5f} seconds")
 
 pcd2_preprocessed = o3d.geometry.PointCloud(
@@ -153,6 +172,7 @@ o3d.visualization.draw_geometries(
 # store_ply(pcd2_preprocessed,"source_preprocessed")
 
 # Point to point
+print("Point to Point")
 pcd2_ptp = icp(
     pcd2, pcd, o3d.pipelines.registration.TransformationEstimationPointToPoint()
 )
@@ -168,6 +188,7 @@ o3d.visualization.draw_geometries(
 # store_ply(pcd2_ptp,"raw_source_p2point")
 # store_ply(pcd2_preprocessed_ptp,"source_preprocessed_ptp")
 # point to plane
+print("Point to Plane")
 pcd.estimate_normals()
 pcd2.estimate_normals()
 pcd2_preprocessed.estimate_normals()
@@ -187,6 +208,7 @@ o3d.visualization.draw_geometries(
 # store_ply(pcd2_ptpl,"raw_source_p2lane")
 # store_ply(pcd2_preprocessed_ptpl,"source_preprocessed_ptpl")
 # Generalised ICP
+print("GICP")
 pcd2_gicp = icp(
     pcd2, pcd, o3d.pipelines.registration.TransformationEstimationForGeneralizedICP()
 )

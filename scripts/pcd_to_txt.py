@@ -33,7 +33,7 @@ import numpy as np
 
 def convert_pcd_to_colmap(
     pcd_file,
-    output_file="../output/scenes_colmap/4_esbjerg_cleaned/sparse/0/points3D.txt",
+    output_file="../output/scenes_colmap/esbjerg/sparse/0/points3D.txt",
 ):
     # Load point cloud using Open3D
     pcd = o3d.io.read_point_cloud(pcd_file)
@@ -57,4 +57,4 @@ def convert_pcd_to_colmap(
 
 
 # Run conversion
-convert_pcd_to_colmap("../output/ouster/esbjerg/esbjerg_cleaned_heavy.ply")
+convert_pcd_to_colmap("../output/ouster/esbjerg_preprocessed/final.pcd")

@@ -7,9 +7,9 @@
   <arg name="visualize" default="true"/>
   <!-- <arg name="bagfile" default="/mnt/data/m2dgr/street_01.bag"/> -->
 
-  <param name="outputdir" type="string" value="$(find lio_ekf)/output/ouster/esbjerg2/" />
+  <param name="outputdir" type="string" value="$(find lio_ekf)/output/ouster/esbjerg_preprocessed/" />
 
-  <param name="pcddir" type="string" value="$(find lio_ekf)/data/esbjerg/scans/" />
+  <param name="pcddir" type="string" value="$(find lio_ekf)/data/esbjerg/processed/" />
 
   <param name="imudir" type="string" value="$(find lio_ekf)/data/esbjerg/imus/mavros_imu_data.csv" />
 

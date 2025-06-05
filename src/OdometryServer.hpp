@@ -58,12 +58,7 @@ namespace lio_ekf
     /// OdometryServer constructor
     OdometryServer(const ros::NodeHandle &nh, const ros::NodeHandle &pnh);
 
-    // buffer imu data
-    void imu_cbk(const sensor_msgs::Imu::ConstPtr &msg_in);
-    void lidar_cbk(const sensor_msgs::PointCloud2ConstPtr &msg);
-    void laser_up_cbk(const sensor_msgs::RangeConstPtr &msg);
-
-    void writeResults(std::ofstream &odo);
+        void writeResults(std::ofstream &odo);
     Eigen::Matrix3d enforceOrthogonality(Eigen::Matrix3d &R);
     void publishMsgs();
 
@@ -72,9 +67,9 @@ namespace lio_ekf
     ros::Publisher imu_publisher_;
 
     std::vector<lio_ekf::IMU> findIMUBetween(std::vector<lio_ekf::IMU> &imu_data, double t1, double t2);
-    std::vector<std::string> getSortedPCDFiles(const std::string &pcd_folder);
+    std::vector<std::pair<std::string, std::string>> getSortedPCDFiles(const std::string &pcd_folder);
     float getClosestRangeAndClean(double timestamp, std::vector<std::pair<double, float>> &laser_up_data);
-    void cloud_to_buffer(const std::string &pcd_filename);
+    void cloud_to_buffer(const std::pair<std::string, std::string> &pcd_pair);
     std::vector<lio_ekf::IMU> loadIMUData(const std::string &imu_csv_path);
     std::vector<std::pair<double, float>> loadLaserUp(const std::string &laserupdir);
     void imu_to_buffer(lio_ekf::IMU imu_reading);
@@ -105,7 +100,7 @@ namespace lio_ekf
 
     double last_timestamp_imu_, last_timestamp_lidar_, last_timestamp_laser_up_;
 
-    std::deque<std::vector<Eigen::Vector3d>> lidar_buffer_;
+    std::deque<std::vector<std::pair<Eigen::Vector3d, Eigen::Vector3d>>> lidar_buffer_;
     std::deque<double> laser_up_buffer_;
     std::deque<lio_ekf::IMU> imu_buffer_;
     std::deque<double> lidar_time_buffer_;
