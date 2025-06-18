@@ -229,9 +229,10 @@ namespace lio_ekf
     publishMsgs();
     for (size_t i = 1; i < pcd_files.size(); ++i)
     {
+      // sleep(1);
       double t1 = extract_timestamp(pcd_files[i - 1].first);
       double t2 = extract_timestamp(pcd_files[i].first);
-      ROS_WARN("Handling pcd_file %zu with timestamp %f", i, t2);
+      ROS_WARN("Handling pcd_file nr %zu with timestamp %f", i, t2);
       ROS_WARN("imu readings left %zu", imu_data.size());
       float range = getClosestRangeAndClean(t2, laser_up_data);
       cloud_to_buffer(pcd_files[i]);
@@ -258,7 +259,6 @@ namespace lio_ekf
 
         imu_count++;
       }
-      // sleep(3);
     }
   }
 
@@ -390,7 +390,7 @@ namespace lio_ekf
       return;
     }
 
-        if (timestamp < last_timestamp_lidar_)
+    if (timestamp < last_timestamp_lidar_)
     {
       ROS_ERROR("Lidar loop back detected, clearing buffer");
       lidar_buffer_.clear();

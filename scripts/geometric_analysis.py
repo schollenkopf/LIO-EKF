@@ -8,18 +8,21 @@ import time
 # points = np.asarray(pcd.points)
 
 
-pcd = o3d.geometry.PointCloud()
-points = []
 
-# floor/wall
-nr_points = 50
-xs = np.linspace(-0.5, 0.5, nr_points) 
-ys = np.linspace(-0.5, 0.5, nr_points) 
-for x in xs:
-    for y in ys:
-        points.append(np.array([x, y, -0.5]))
-center_rot = np.array([-0.2, 0, 0])
-center_trans = np.array([0.2, 0,0])
+
+
+# pcd = o3d.geometry.PointCloud()
+# points = []
+
+# # floor/wall
+# nr_points = 50
+# xs = np.linspace(-0.5, 0.5, nr_points) 
+# ys = np.linspace(-0.5, 0.5, nr_points) 
+# for x in xs:
+#     for y in ys:
+#         points.append(np.array([x, y, -0.5]))
+# center_rot = np.array([-0.2, 0, 0])
+# center_trans = np.array([0.2, 0,0])
 
 # sphere
 # nr_points = 50
@@ -76,6 +79,8 @@ center_trans = np.array([0.2, 0,0])
 # points = np.array(points)
 # center_rot = np.array([0, -0.2, 0])
 # center_trans = np.array([0, 0.2,0])
+
+
 
 pcd.points = o3d.utility.Vector3dVector(points)
 pcd.estimate_normals()
@@ -153,12 +158,13 @@ fig, ax = plt.subplots()
 
 # Create vertical gradient background from red to green
 gradient = np.linspace(0, 1, 256).reshape(-1, 1)
-ax.imshow(gradient, extent=[0, 1, 0, 1], aspect='auto', origin='lower',
+ax.imshow(gradient, extent=[0, 1, 0, 1.05], aspect='auto', origin='lower',
           cmap='RdYlGn')
 
 # Plot the function on top
 ax.plot(w, f, color='black', linewidth=2)
 ax.set_xlabel('scaled eigenvalue')
 ax.set_ylabel('color')
+ax.set_ylim(0, 1.05)
 plt.grid(True)
 plt.show()

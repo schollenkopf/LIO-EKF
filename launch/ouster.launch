@@ -9,7 +9,7 @@
 
   <param name="outputdir" type="string" value="$(find lio_ekf)/output/ouster/esbjerg_preprocessed/" />
 
-  <param name="pcddir" type="string" value="$(find lio_ekf)/data/esbjerg/processed/" />
+  <param name="pcddir" type="string" value="$(find lio_ekf)/data/esbjerg/processed4/" />
 
   <param name="imudir" type="string" value="$(find lio_ekf)/data/esbjerg/imus/mavros_imu_data.csv" />
 

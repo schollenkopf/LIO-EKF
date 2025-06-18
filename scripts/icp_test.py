@@ -7,6 +7,56 @@ import pyransac3d as pyrsc
 import time
 
 
+def pca_normal_projection(pcd, threshold=0.1):
+    pcd.estimate_normals(
+    )
+
+    normals = np.asarray(pcd.normals)
+    points = np.asarray(pcd.points)
+
+    # Perform PCA on normals
+    cov = normals.T @ normals
+    eigenvalues, eigenvectors = np.linalg.eigh(cov)
+    sorted_indices = np.argsort(eigenvalues)
+
+    eigenvalues = eigenvalues[sorted_indices]
+    eigenvectors = eigenvectors[:, sorted_indices]
+    scaled_eigenvalues = eigenvalues / np.sum(eigenvalues)
+
+    if scaled_eigenvalues[2] > (1 - threshold):
+        # Flat surface (e.g., wall or floor): one dominant direction
+        weak_axes = eigenvectors[:, :2]
+    elif scaled_eigenvalues[0] < threshold:
+        # Linear structure (e.g., column): one weak direction
+        weak_axes = eigenvectors[:, :1]
+    else:
+        # no need to downsample
+        weak_axes = np.empty((3, 0))
+
+    adjusted_normals = np.zeros_like(normals)
+    for i, n in enumerate(normals):
+        n_cleaned = n.copy()
+        for w in weak_axes.T:
+            n_cleaned -= w * (np.dot(n, w) / np.dot(w, w))
+        adjusted_normals[i] = n_cleaned
+        if adjusted_normals[i][2]>0.3:
+            print("no",n_cleaned)
+            break
+    
+    # Normalize the result
+    norms = np.linalg.norm(adjusted_normals, axis=1, keepdims=True)
+    norms[norms == 0] = 1
+    adjusted_normals /= norms
+
+    # Construct new point cloud
+    new_pcd = o3d.geometry.PointCloud()
+    new_pcd.points = o3d.utility.Vector3dVector(points)
+    new_pcd.normals = o3d.utility.Vector3dVector(adjusted_normals)
+
+
+    return new_pcd
+
+
 def pca_downsample(pcd, threshold=0.1, downsample_factor=20,voxelsize = 0.15):
     pcd.estimate_normals(
         search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=5, max_nn=30)
@@ -118,6 +168,9 @@ pcd2.remove_non_finite_points()
 # pcd2_preprocessed = ransac_downsample(pcd2)
 # store_ply(pcd2_preprocessed,"ransac_preprocessed")
 
+
+
+
 c1 = o3d.io.read_point_cloud("icptest/source_mask3d/source_cable1.ply")
 c2 = o3d.io.read_point_cloud("icptest/source_mask3d/source_cable2.ply")
 l = o3d.io.read_point_cloud("icptest/source_mask3d/source_ladder.ply")
@@ -148,7 +201,7 @@ pcd2_preprocessed = o3d.geometry.PointCloud(
 )
 
 # set colors
-pcd.colors = o3d.utility.Vector3dVector(np.tile([0.5, 0.5, 0.5], (len(pcd.points), 1)))
+pcd.colors = o3d.utility.Vector3dVector(np.tile([0.0, 0.0, 0.0], (len(pcd.points), 1)))
 pcd2.colors = o3d.utility.Vector3dVector(
     np.tile([0.5, 0.0, 0.0], (len(pcd2.points), 1))
 )
@@ -157,25 +210,27 @@ pcd2_preprocessed.colors = o3d.utility.Vector3dVector(
 )
 
 
+
 o3d.visualization.draw_geometries(
     [pcd, pcd2], point_show_normal=False, window_name="target and source"
 )
 # store_ply(pcd,"target")
 # store_ply(pcd2,"raw_source")
-o3d.visualization.draw_geometries(
-    [pcd2_preprocessed],
-    point_show_normal=False,
-    window_name="target and source downsampled",
-)
+# o3d.visualization.draw_geometries(
+#     [pcd2_preprocessed],
+#     point_show_normal=False,
+#     window_name="target and source downsampled",
+# )
 
 
 # store_ply(pcd2_preprocessed,"source_preprocessed")
 
-# Point to point
+# # Point to point
 print("Point to Point")
 pcd2_ptp = icp(
     pcd2, pcd, o3d.pipelines.registration.TransformationEstimationPointToPoint()
 )
+
 pcd2_preprocessed_ptp = icp(
     pcd2_preprocessed,
     pcd,
@@ -189,14 +244,16 @@ o3d.visualization.draw_geometries(
 # store_ply(pcd2_preprocessed_ptp,"source_preprocessed_ptp")
 # point to plane
 print("Point to Plane")
-pcd.estimate_normals()
-pcd2.estimate_normals()
-pcd2_preprocessed.estimate_normals()
+
+
+pcd.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=30))
+# pcd2_preprocessed.estimate_normals()
 pcd2_ptpl = icp(
     pcd2,
     pcd,
     o3d.pipelines.registration.TransformationEstimationPointToPlane(),
 )
+
 pcd2_preprocessed_ptpl = icp(
     pcd2_preprocessed,
     pcd,
